@@ -18,6 +18,7 @@ import scriptcontext
 import rhinoscript.utility
 import Rhino
 from Rhino.Geometry import *
+from Rhino.DocObjects import *
 
 
 class Timber:
@@ -38,7 +39,7 @@ class Timber:
         self.section_curves = []  # 断面曲線のリスト
 
         # temp method
-        self.generate_timber_info(random.randint(900, 1800))
+        self.generate_timber_info(random.randint(1200, 2000))
 
     # 断面曲面から仮想の木材データを生成する
     def generate_timber_info(self, timber_length):
@@ -48,7 +49,7 @@ class Timber:
 
         for i in range(split_num):
             section_curves_info = [random.randint(-5, 5), random.randint(-5, 5), i * unit_center_point_z]  # 中心点
-            radius_section_crv = random.randint(50, 60)  # 半径
+            radius_section_crv = random.randint(30, 40)  # 半径
             section_curves_info.append(radius_section_crv)
             self.section_curves_info.append(section_curves_info)
 
@@ -78,16 +79,47 @@ class Timber:
                                                           False)
 
         # draw model -> ライノ空間上に描画させる
-        self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_line)
-        for srf in self.surface:
+        self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_line)  # 中心線
+        for srf in self.surface:  # サーフェス
             self.surface_guid = scriptcontext.doc.Objects.AddBrep(srf)
+
+        # 以下はデバック用
+        # for point in self.center_points:  # 中心点
+        #     scriptcontext.doc.Objects.AddPoint(point)
+        # for crv in self.section_curves:
+        #     scriptcontext.doc.Objects.AddCurve(crv)
 
         # 木材を使用済みにする
         self.is_used = True
 
     # timberを移動させる
-    def transform_timber(self, origin_p, transform_p):
-        xf = Rhino.Geometry.Transform.Translation(transform_p - origin_p)
+    def translate_timber(self, origin_p, transform_p):
+        xf = Rhino.Geometry.Transform.Translation(transform_p - origin_p)  # 変位
+
+        '''プログラム上の変数をここで更新。ここ重要'''
+        self.center_line.Transform(xf)
+        for srf in self.surface:
+            srf.Transform(xf)
+
+        # モデル空間に更新内容を反映させる
+        scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
+        scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+
+    # 回転軸を設定し、θを求め、timberを回転させる
+    def rotation_timber(self, vec_target_line):
+        vec_timber = Rhino.Geometry.Vector3d(self.center_line.Last - self.center_line.First)
+        axis_vec = Vector3d.CrossProduct(vec_timber, vec_target_line)
+        angle = Vector3d.VectorAngle(vec_timber, vec_target_line)
+
+        # 変位
+        xf = Transform.Rotation(angle, axis_vec, self.center_line.First)
+
+        '''プログラム上の変数をここで更新。ここ重要'''
+        self.center_line.Transform(xf)
+        for srf in self.surface:
+            srf.Transform(xf)
+
+        # モデル空間に更新内容を反映させる
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
         scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
 
