@@ -19,27 +19,31 @@ import rhinoscript.utility
 import Rhino
 from Rhino.Geometry import *
 from Rhino.DocObjects import *
+from optiimization import *
 
 
 class Timber:
 
     def __init__(self, id, length=None, path_to_csv=None):
         self.id = id
+        self.generate_pattern = None
+        self.text_dot_id = None
         self.center_line = None
         self.center_line_guid = None
-        self.length = length
+        self.length = float(length)
+        self.surface_breps = None
         self.surface = None
         self.surface_guid = None
         self.path_to_csv = path_to_csv
         self.is_used = False
+        self.joint_pts_info = []
 
         # temp parameter
         self.section_curves_info = []
         self.center_points = []
         self.section_curves = []  # 断面曲線のリスト
-
-        # temp method
-        self.generate_timber_info(random.randint(1200, 2000))
+        self.intersection_curve = None  # 他の部材と接合する位置
+        self.target_line = None
 
     # 断面曲面から仮想の木材データを生成する
     def generate_timber_info(self, timber_length):
@@ -74,20 +78,25 @@ class Timber:
             self.section_curves.append(section_curve)
 
         self.center_line = Rhino.Geometry.Polyline(self.center_points)
-        self.surface = Rhino.Geometry.Brep.CreateFromLoft(self.section_curves, Point3d.Unset, Point3d.Unset,
-                                                          LoftType.Loose,
-                                                          False)
+        # self.center_line = Rhino.Geometry.PolylineCurve(self.center_points)
 
-        # draw model -> ライノ空間上に描画させる
-        self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_line)  # 中心線
-        for srf in self.surface:  # サーフェス
+        self.surface_breps = Rhino.Geometry.Brep.CreateFromLoft(self.section_curves, Point3d.Unset, Point3d.Unset,
+                                                                LoftType.Loose,
+                                                                False)
+
+        surfaces = self.surface_breps[0].Surfaces
+        self.surface = surfaces[0]
+
+        # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
+        # 中心線
+        # self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_line)
+        self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_points)
+
+        # サーフェス
+        for srf in self.surface_breps:
             self.surface_guid = scriptcontext.doc.Objects.AddBrep(srf)
-
-        # 以下はデバック用
-        # for point in self.center_points:  # 中心点
-        #     scriptcontext.doc.Objects.AddPoint(point)
-        # for crv in self.section_curves:
-        #     scriptcontext.doc.Objects.AddCurve(crv)
+        # dot text
+        self.text_dot_id = scriptcontext.doc.Objects.AddTextDot(self.id, self.center_line.PointAt(0))
 
         # 木材を使用済みにする
         self.is_used = True
@@ -98,30 +107,371 @@ class Timber:
 
         '''プログラム上の変数をここで更新。ここ重要'''
         self.center_line.Transform(xf)
-        for srf in self.surface:
+        for srf in self.surface_breps:
             srf.Transform(xf)
 
-        # モデル空間に更新内容を反映させる
+        # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
         scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+        if self.text_dot_id:
+            scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
-    # 回転軸を設定し、θを求め、timberを回転させる
-    def rotation_timber(self, vec_target_line):
-        vec_timber = Rhino.Geometry.Vector3d(self.center_line.Last - self.center_line.First)
-        axis_vec = Vector3d.CrossProduct(vec_timber, vec_target_line)
-        angle = Vector3d.VectorAngle(vec_timber, vec_target_line)
-
-        # 変位
-        xf = Transform.Rotation(angle, axis_vec, self.center_line.First)
+    # timberを回転させる
+    def rotate_timber(self, angle, axis, rotation_center):
+        xf = Transform.Rotation(angle, axis, rotation_center)  # 変位
 
         '''プログラム上の変数をここで更新。ここ重要'''
-        self.center_line.Transform(xf)
-        for srf in self.surface:
+        self.center_line.Transform(xf)  # 中心線
+        for srf in self.surface_breps:  # 表面サーフェス
             srf.Transform(xf)
 
-        # モデル空間に更新内容を反映させる
+        # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
         scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+        if self.text_dot_id:
+            scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
+
+    # 接する面積を最小化する(1つの接合点を処理する)
+    def minimized_joint_area(self, other_timber, joint_point, unit_move_vec):
+
+        # minimized_joint_area --> optimization
+        tolerance = 40
+        previous_curve_length_list = 1000
+        is_vec_reverse = False
+        for i in range(100):
+            intersect_info = Intersect.Intersection.BrepBrep(self.surface_breps[0], other_timber.surface_breps[0], 0.01)
+
+            # 木材間で接触がなかった場合
+            if len(intersect_info[1]) == 0:
+                # TODO バグの原因->動かす方向の設定
+                if i == 0:
+                    origin_pt, transform_pt = Optimization.get_move_vector(joint_point, self.surface_breps[0],
+                                                                           other_timber.surface_breps[0])
+
+                    self.translate_timber(origin_pt, transform_pt)
+                    continue
+
+                intersection_crv_length = 50
+
+                if not is_vec_reverse:
+                    unit_move_vec.Reverse()
+                    is_vec_reverse = True
+
+            # 木材間で接触があった場合
+            else:
+                intersection_curve = intersect_info[1][0]
+                intersection_crv_length = intersection_curve.GetLength()
+
+                # reverse move vector TODO 改良の余地あり
+                if previous_curve_length_list < intersection_crv_length:
+                    is_vec_reverse = True
+
+                previous_curve_length_list = intersection_crv_length
+
+                if is_vec_reverse:
+                    unit_move_vec.Reverse()
+                    is_vec_reverse = False
+
+            # 交差曲線の長さが許容値(tolerance)より短い場合
+            if intersection_crv_length < tolerance:
+                print("final length: {0}".format(intersection_crv_length))
+                return
+            else:
+                new_move_vec = Optimization.get_proper_move_vector(unit_move_vec, intersection_crv_length, joint_point)
+                transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
+                self.translate_timber(joint_point, transform_p)
+
+            if i == 99:
+                print("Can not be optimization")
+
+    # 接する面積を最小化する(2つの接合点を同時に処理する)
+    def bridge_joint_area(self, joint_pts_info):
+        """
+        :param joint_pts_info:  [[joint_id, joint point, cross_vector, self timber, other timber, +rotation center]]
+        :return:
+        """
+
+        # # parameter
+        # joint_points, move_vectors, other_timbers, unit_move_vectors, rotation_base_points = [], [], [], [], []
+        #
+        # # 接合点の情報を取得
+        # for joint_pt_info in joint_pts_info:
+        #     joint_points.append(joint_pt_info[1])
+        #     move_vectors.append(joint_pt_info[2])
+        #     other_timbers.append(joint_pt_info[4])
+        #
+        # # 正規化した移動ベクトルを取得
+        # for move_vec in move_vectors:
+        #     unit_move_vec = Vector3d(move_vec.X / move_vec.Length, move_vec.Y / move_vec.Length,
+        #                              move_vec.Z / move_vec.Length)
+        #
+        #     unit_move_vectors.append(unit_move_vec)
+
+        # rotation center
+        for i, joint_pt_info in enumerate(joint_pts_info):
+            vec_length = 1000
+            unit_vec = joint_pt_info[2]
+            trans_vec = Vector3d(unit_vec.X * vec_length, unit_vec.Y * vec_length, unit_vec.Z * vec_length)
+            trans_vec = Vector3d.Add(Vector3d(joint_pt_info[1]), trans_vec)
+            line = LineCurve(joint_pt_info[1], Point3d(trans_vec.X, trans_vec.Y, trans_vec.Z))
+            intersect_info = Intersect.Intersection.CurveBrep(line, joint_pts_info[i][4].surface_breps[0], 0.001)
+            joint_pts_info[i].append(intersect_info[2][0])
+
+        # print(joint_pts_info)
+
+        # optimization parameter
+        tolerance = 40
+        previous_curve_length_move_list = [1000, 1000]
+        previous_curve_length_rotate_list = [1000, 1000]
+
+        is_vec_reverse = False
+        rotate_direction_list = [0, 0]
+        intersect_info_list = []
+        flag_optimized_joints = [0, 0]
+        base_pt_vector = Vector3d(joint_pts_info[1][5] - joint_pts_info[0][5])
+
+        rotate_direction_list = Optimization.get_rotate_direction(joint_pts_info, rotate_direction_list)
+
+        for i in range(100):
+            intersect_info_list = []
+
+            # 接合部1,2の交差曲線を取得
+            for joint_pt_info in joint_pts_info:
+                other_timber = joint_pt_info[4]
+                intersect_info = Intersect.Intersection.BrepBrep(self.surface_breps[0], other_timber.surface_breps[0],
+                                                                 0.01)
+                intersect_info_list.append(intersect_info)
+
+            # 部材同士の関係性(交差曲線)から、処理方法を選択する
+            pattern_info, curve_length_list = Optimization.get_pattern_of_processing_joint(intersect_info_list)
+
+            if pattern_info[0] == 2:
+                print("Optimization is success")
+                return
+
+            # 選択した木材の情報
+            index = pattern_info[1]
+            intersection_crv_length = pattern_info[2]
+
+            if pattern_info[0] == 0:
+                print("previous_move: {0}".format(previous_curve_length_move_list))
+            else:
+                print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
+            print("now: {0}".format(curve_length_list))
+
+            # 01. move timber
+            if pattern_info[0] == 0:
+                if intersection_crv_length is None:
+                    origin_pt, transform_pt = Optimization.get_move_vector(joint_pts_info[index][1],
+                                                                           self.surface_breps[0],
+                                                                           joint_pts_info[index][4].surface_breps[0])
+
+                    self.translate_timber(origin_pt, transform_pt)
+                else:
+                    new_move_vec = Optimization.get_proper_move_vector(joint_pts_info[index][2],
+                                                                       intersection_crv_length,
+                                                                       joint_pts_info[index][1])
+                    transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
+                    self.translate_timber(joint_pts_info[index][1], transform_p)
+
+                # judge  TODO 他にもある
+                if previous_curve_length_move_list[index] < intersection_crv_length:
+                    is_vec_reverse = True
+
+
+                # reverse unit move vector TODO 改良の余地あり
+                if is_vec_reverse:
+                    joint_pts_info[index][2].Reverse()
+                    is_vec_reverse = False
+
+                # update
+                previous_curve_length_move_list[index] = curve_length_list[index]
+
+            # 02. rotate timber
+            elif pattern_info[0] == 1:
+
+                # update if condition is satisfied
+                if index == 0:
+                    if previous_curve_length_rotate_list[1] < curve_length_list[1] - 5:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    elif previous_curve_length_rotate_list[1] is None and curve_length_list[1]:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    elif previous_curve_length_rotate_list[1] and curve_length_list[1] is None:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    # update
+                    previous_curve_length_rotate_list[1] = curve_length_list[1]
+
+
+                elif index == 1:
+                    if previous_curve_length_rotate_list[0] < curve_length_list[0] - 5:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    elif previous_curve_length_rotate_list[0] is None and curve_length_list[0]:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    elif previous_curve_length_rotate_list[0] and curve_length_list[0] is None:
+                        if rotate_direction_list[index] == -1:
+                            rotate_direction_list[index] = 1
+                        else:
+                            rotate_direction_list[index] = -1
+
+                    # update
+                    previous_curve_length_rotate_list[0] = curve_length_list[0]
+
+                self.target_line.calc_vector()
+
+                # angle = random.random() * rotate_direction_list[index]
+                angle = random.uniform(0.001, 0.005) * rotate_direction_list[index]
+                print("rotate_angle: {0}".format(angle))
+
+                axis = joint_pts_info[index][4].target_line.vector
+
+                rotation_center = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[index][1][0])
+
+                self.rotate_timber(angle, axis, rotation_center)
+
+
+            # if pattern_info[0] == 0:
+            #     print("previous_move: {0}".format(previous_curve_length_move_list))
+            # else:
+            #     print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
+            # print("now: {0}".format(curve_length_list))
+
+
+            if i == 99:
+                print("Can not be optimization")
+
+            print("")
+
+    def move_timber(self, other_timber, joint_point, move_vec):
+
+        # minimized_joint_area --> optimization
+        unit_move_vec = Vector3d(move_vec.X / move_vec.Length, move_vec.Y / move_vec.Length,
+                                 move_vec.Z / move_vec.Length)
+
+        tolerance = 40
+        previous_curve_length_list = 1000
+        is_vec_reverse = False
+        for i in range(100):
+            # Intersects a timber surface with other timber surface
+            intersect_info = Intersect.Intersection.BrepBrep(self.surface_breps[0], other_timber.surface_breps[0], 0.01)
+
+            # 木材間で接触がなかった場合
+            if len(intersect_info[1]) == 0:
+                # TODO バグの原因->動かす方向の設定
+                if i == 0:
+                    origin_pt, transform_pt = Optimization.get_move_vector(joint_point, self.surface_breps[0],
+                                                                           other_timber.surface_breps[0])
+
+                    self.translate_timber(origin_pt, transform_pt)
+                    continue
+
+                intersection_crv_length = 50
+
+                if not is_vec_reverse:
+                    unit_move_vec.Reverse()
+                    is_vec_reverse = True
+
+            # 木材間で接触があった場合
+            else:
+                intersection_curve = intersect_info[1][0]
+                intersection_crv_length = intersection_curve.GetLength()
+
+                # reverse move vector TODO 改良の余地あり
+                if previous_curve_length_list < intersection_crv_length:
+                    is_vec_reverse = True
+
+                previous_curve_length_list = intersection_crv_length
+
+                if is_vec_reverse:
+                    unit_move_vec.Reverse()
+                    is_vec_reverse = False
+
+            # 交差曲線の長さが許容値(tolerance)より短い場合
+            if intersection_crv_length < tolerance:
+                print("final length: {0}".format(intersection_crv_length))
+                return
+            else:
+                new_move_vec = Optimization.get_proper_move_vector(unit_move_vec, intersection_crv_length, joint_point)
+                transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
+                self.translate_timber(joint_point, transform_p)
+
+            if i == 99:
+                print("Can not be optimization")
+
+    def judge_timber_pattern(self, target_line, generated_timbers):
+        """
+        始点と終点情報から木材の生成パターンを判定する
+        それぞれの点が取れるパターンは①GL②空中③既存のいずれか。パターンの合計は５つに分類される。
+        rating:2 -> GL-Gl(pattern 0)
+        rating:3 -> GL-空中(pattern 1)
+        rating:4 -> GL-既存(pattern 2)
+        rating:5 -> 空中-既存(pattern 3)
+        rating:6 -> 既存-既存(pattern 4)
+        :return:
+        """
+
+        rating = 0
+
+        # 始点、終点のパターンを検索し、配点による分類を行う
+        temp_pts = [target_line.start_p, target_line.end_p]
+
+        for test_point in temp_pts:
+            is_there_joint_pt = False
+
+            # GL判定--> +1
+            if test_point.Z == 0:
+                rating += 1
+                continue
+
+            # 既存の部材に接合しているかの判定--> +3
+            for generated_timber in generated_timbers:
+
+                temp_target_curve = generated_timber.center_line.ToPolylineCurve()
+                events = Intersect.Intersection.CurveCurve(temp_target_curve, self.target_line.Line, 0.001, 0.0)
+
+                if events:
+                    for ccx_event in events:
+                        if ccx_event.PointA == test_point:
+                            rating += 3
+                            is_there_joint_pt = True
+                            continue
+
+            # 空中判定--> +2
+            if not is_there_joint_pt:
+                rating += 2
+
+        # 配点から、部材の生成パターンを判定する
+        if rating == 2:
+            self.generate_pattern = 0
+        elif rating == 3:
+            self.generate_pattern = 1
+        elif rating == 4:
+            self.generate_pattern = 2
+        elif rating == 5:
+            self.generate_pattern = 3
+        elif rating == 6:
+            self.generate_pattern = 4
+        else:
+            print("It's a pattern that can't be classified. ")
 
     # モデル空間上にあるオブジェクトを3dmファイルに書き出す TODO 指定したオブジェクトのみを書き出すようにする
     @staticmethod

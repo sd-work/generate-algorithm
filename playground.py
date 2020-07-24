@@ -1,6 +1,10 @@
 # coding: utf-8
 
+import scriptcontext
+import rhinoscript.utility
+import Rhino
 from Rhino.Geometry import *
+from Rhino.DocObjects import *
 import rhinoscriptsyntax as rs
 import math
 import random
@@ -8,19 +12,25 @@ import sys
 import codecs
 from timber import *
 from target_line import *
+from optiimization import *
 
 
 class Playground:
 
     def __init__(self):
-        self.timber_list = []  # 遊び場を構成している部材の数
+        self.timber_list_in_database = []  # データベース上にある部材
+        self.timber_list_in_playground = []  # 遊び場を構成している部材
+        self.target_line_in_playground = []  # 遊び場を構成しているターゲット曲線
         self.adding_timber = None
+        self.adding_timbers = []
+        self.adding_target_line = None
 
     # 部材データを生成する TODO ここはスキャンした3Dデータに切り替える
     def generate_timber_info(self, num_timber):
         for id in range(num_timber):
             timber = Timber(id)
-            self.timber_list.append(timber)
+            timber.generate_timber_info(random.randint(1200, 2000))
+            self.timber_list_in_database.append(timber)
 
             # 木材の情報をcsvファイルとして書き出す
             timber.export_csv_file("timber_" + str(id + 1))
@@ -31,11 +41,12 @@ class Playground:
         with open(path, "w") as csv_file:
             writer = csv.writer(csv_file)
 
-            for timber in self.timber_list:
+            for timber in self.timber_list_in_database:
                 # TODO サーバーとやりとりをするので、データベース上に使用した材かどうかの記述をするように変更する
                 writing_info = [timber.id, timber.length, timber.path_to_csv.encode("utf-8")]
-
                 writer.writerow(writing_info)
+
+        self.timber_list_in_database = []  # reset
 
     def open_csv_file(self):
         path = r"G:\マイドライブ\2020\04_Master\2006_Generation-algorithm\RhinoPython\csv\timber_info.csv"
@@ -45,87 +56,101 @@ class Playground:
             for info in reader:
                 if not info:
                     continue
-
-                self.timber_list.append(Timber(info[0], info[1], info[2]))
+                self.timber_list_in_database.append(Timber(info[0], info[1], info[2]))
 
     def select_adding_timber(self, target_line):
 
-        # 木材の長さ
-        # target_length = 0
+        # 取得したターゲット曲線情報から、木材を追加するための新たなターゲット曲線情報を取得
+        target_length, self.adding_target_line = Optimization.edit_adding_timber_range(target_line)
 
-        # 部材の端点のいずれかがGLから生成される場合
-        if target_line.start_p.Z == 0 or target_line.end_p.Z == 0:
-            if target_line.start_p.Z == 0:
-                pass
-            else:
-                temp_p = target_line.start_p
-                target_line.start_p = target_line.end_p
-                target_line.end_p = temp_p
-                target_line.vector = Rhino.Geometry.Vector3d(target_line.end_p - target_line.start_p)
+        # 木材の参照長さに最も近似した長さの木材を検索し、取得する
+        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, target_length)
 
-            target_length = target_line.length + random.randint(300, 400)
-
-        else:
-            vec1 = Vector3d(target_line.start_p - target_line.mid_p)
-            vec2 = Vector3d(target_line.end_p - target_line.mid_p)
-
-            unit_vec1 = Vector3d(vec1.X / vec1.Length, vec1.Y / vec1.Length, vec1.Z / vec1.Length)
-            unit_vec2 = Vector3d(vec2.X / vec2.Length, vec2.Y / vec2.Length, vec2.Z / vec2.Length)
-
-            vec_length1 = vec1.Length + random.randint(300, 600)
-            vec_length2 = vec2.Length + random.randint(300, 600)
-
-            new_vec1 = Vector3d(unit_vec1.X * vec_length1, unit_vec1.Y * vec_length1, unit_vec1.Z * vec_length1)
-            new_vec2 = Vector3d(unit_vec2.X * vec_length2, unit_vec2.Y * vec_length2, unit_vec2.Z * vec_length2)
-
-            new_vec1 = Vector3d.Add(new_vec1, Vector3d(target_line.mid_p))
-            new_vec2 = Vector3d.Add(new_vec2, Vector3d(target_line.mid_p))
-
-            new_target_line = Line(Point3d(new_vec1.X, new_vec1.Y, new_vec1.Z),
-                                   Point3d(new_vec2.X, new_vec2.Y, new_vec2.Z))
-
-            target_length = new_target_line.Length
-
-        print("target_length: {0}".format(target_length))
-
-        # 条件に合致する木材を取得
-        candidate_timbers = []
-
-        select_timber = None
-        min_diff_length = 10000
-        for i, timber in enumerate(self.timber_list):
-            # TODO ここの処理はいずれはサーバーとのやりとりの中で行う
-            if timber.is_used:
-                continue
-
-            # ターゲット曲線と木材の長さの差異を計算する
-            diff_length = abs(timber.length - target_length)
-
-            if diff_length < min_diff_length:
-                select_timber = timber
-                min_diff_length = diff_length
-                print(min_diff_length)
-
-            # # TODO 長さがMaxのモノが選定されるとバグがでる。要改善
-            # if target_length - 200 <= timber.length <= target_length + 200:
-            #     diff_length = abs(timber.length - target_length)
-            #     candidate_timbers.append(timber)
-
-        # # ランダムに1つの木材を選択 TODO ここもいずれは調整したい。ランダム性を。
-        # if not candidate_timbers:
-        #     print("There is not timber in candidate timbers list.")
-        #     return
-
-        # self.adding_timber = random.choice(candidate_timbers)
         self.adding_timber = select_timber
+        self.adding_timber.target_line = self.adding_target_line  # ターゲット曲線を設定
+        self.adding_timber.generate_timber()  # 木材を生成
+        self.adding_timbers.append(self.adding_timber)
 
-        self.adding_timber.generate_timber()
+        #  ターゲット曲線から木材の生成パターンを判定する
+        self.adding_timber.judge_timber_pattern(target_line, self.timber_list_in_playground)
 
-    def transform_timber(self, target_line):
-        # 01. translate
+        # 遊び場を構成しているターゲット曲線群に追加
+        self.target_line_in_playground.append(self.adding_target_line)
+
+    def transform_timber(self):
+        # translate
         origin_p = self.adding_timber.center_line.First  # timberの端点
-        transform_p = target_line.start_p  # ターゲット曲線の端点
+        transform_p = self.adding_target_line.start_p  # ターゲット曲線の端点
         self.adding_timber.translate_timber(origin_p, transform_p)
 
-        # 02. rotation
-        self.adding_timber.rotation_timber(target_line.vector)
+        # rotation
+        vector_timber = Rhino.Geometry.Vector3d(self.adding_timber.center_line.Last - self.adding_timber.center_line.First)
+        angle = Vector3d.VectorAngle(vector_timber, self.adding_target_line.vector)
+        axis = Vector3d.CrossProduct(vector_timber, self.adding_target_line.vector)
+        rotation_center = self.adding_timber.center_line.First
+        self.adding_timber.rotate_timber(angle, axis, rotation_center)
+
+    def minimized_joint_area(self):
+
+        # ターゲット曲線の情報から接合点、ベクトルを計算し、取得する
+        joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timber_list_in_playground)
+
+        # 接する面積の最小化を行う TODO ここは汎用的(どんな追加状況でも生成可能)なアルゴリズムに変更する
+        optimized_timbers = []
+        optimized_unit_move_vec = []
+
+        # print("num_joint_pt: {0}".format(len(joint_pts_info)))
+
+        for i in range(len(joint_pts_info)):
+            joint_pt = joint_pts_info[i][1]
+            unit_move_vec = joint_pts_info[i][2]
+            self_timber = joint_pts_info[i][3]
+            other_timber = joint_pts_info[i][4]
+
+            # TODO 汎用的なアルゴリズムに変更する
+            if self_timber in optimized_timbers:
+                # TODO switchした際にself timberはgenerated_timberではだめ！
+                if other_timber in self.timber_list_in_playground:
+                    # print("other timber is already used in playground")
+
+                    # test
+                    self_timber.bridge_joint_area(joint_pts_info)
+                    return
+
+                else:
+                    self_timber = other_timber
+                    other_timber = joint_pts_info[i][3]
+
+            # vector TODO 汎用的なアルゴリズムに変更する
+            if optimized_unit_move_vec:
+                angle = Vector3d.VectorAngle(optimized_unit_move_vec[0], unit_move_vec)
+                if angle == 0:
+                    pass
+
+                else:
+                    unit_move_vec.Reverse()
+
+            print("timber_{0}".format(self_timber.id))
+            print("timber_{0}".format(other_timber.id))
+
+            # optimization
+            self_timber.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
+
+            # append list
+            optimized_timbers.append(self_timber)
+            optimized_timbers.append(other_timber)
+
+            optimized_unit_move_vec.append(unit_move_vec)
+
+    def reset(self, explode_target_lines):
+        # 生成した部材を記録しておく
+        for timber in self.adding_timbers:
+            self.timber_list_in_playground.append(timber)
+
+        # reset
+        self.adding_timber = None
+        self.adding_timbers = []
+        self.adding_target_line = None
+        rs.DeleteObjects(explode_target_lines)
+
+        print("")
