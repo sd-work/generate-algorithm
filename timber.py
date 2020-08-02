@@ -131,19 +131,29 @@ class Timber:
         if self.text_dot_id:
             scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
+    # Rhinoモデル空間上にあるオブジェクトを回転させる
+    def rotate_timber_in_program(self, angle, axis, rotation_center):
+
+        xf = Transform.Rotation(angle, axis, rotation_center)  # 変位
+
+        '''プログラム上の変数をここで更新'''
+        self.center_line.Transform(xf)  # 中心線
+        for srf in self.surface_breps:  # 表面サーフェス
+            srf.Transform(xf)
+
     # 接する面積を最小化する(1つの接合点を処理する)
     def minimized_joint_area(self, other_timber, joint_point, unit_move_vec):
 
-        # minimized_joint_area --> optimization
+        # optimization parameter
         tolerance = 40
         previous_curve_length_list = 1000
         is_vec_reverse = False
-        for i in range(100):
+
+        for i in range(200):
             intersect_info = Intersect.Intersection.BrepBrep(self.surface_breps[0], other_timber.surface_breps[0], 0.01)
 
-            # 木材間で接触がなかった場合
+            ### 木材間で接触がなかった場合 ###
             if len(intersect_info[1]) == 0:
-                # TODO バグの原因->動かす方向の設定
                 if i == 0:
                     origin_pt, transform_pt = Optimization.get_move_vector(joint_point, self.surface_breps[0],
                                                                            other_timber.surface_breps[0])
@@ -151,38 +161,45 @@ class Timber:
                     self.translate_timber(origin_pt, transform_pt)
                     continue
 
-                intersection_crv_length = 50
+                intersection_crv_length = None
 
                 if not is_vec_reverse:
                     unit_move_vec.Reverse()
                     is_vec_reverse = True
 
-            # 木材間で接触があった場合
+            #### 木材間で接触があった場合 ###
             else:
                 intersection_curve = intersect_info[1][0]
                 intersection_crv_length = intersection_curve.GetLength()
 
-                # reverse move vector TODO 改良の余地あり
+                # reverse move vector
                 if previous_curve_length_list < intersection_crv_length:
                     is_vec_reverse = True
-
-                previous_curve_length_list = intersection_crv_length
 
                 if is_vec_reverse:
                     unit_move_vec.Reverse()
                     is_vec_reverse = False
 
+            # update parameter
+            previous_curve_length_list = intersection_crv_length
+
             # 交差曲線の長さが許容値(tolerance)より短い場合
-            if intersection_crv_length < tolerance:
-                print("final length: {0}".format(intersection_crv_length))
-                return
+            if 0 < intersection_crv_length < tolerance:
+                print("Final intersection curve length: {0}".format(intersection_crv_length))
+
+                ### debug ###
+                if intersect_info[1]:
+                    scriptcontext.doc.Objects.AddCurve(intersect_info[1][0])
+
+                return intersection_crv_length
             else:
                 new_move_vec = Optimization.get_proper_move_vector(unit_move_vec, intersection_crv_length, joint_point)
                 transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
-                self.translate_timber(joint_point, transform_p)
+                self.translate_timber(joint_point, transform_p)  # move timber
 
-            if i == 99:
-                print("Can not be optimization")
+            if i == 199:
+                print("Optimization has failed")
+                return False
 
     # 接する面積を最小化する(2つの接合点を同時に処理する)
     def bridge_joint_area(self, joint_pts_info):
@@ -190,22 +207,6 @@ class Timber:
         :param joint_pts_info:  [[joint_id, joint point, cross_vector, self timber, other timber, +rotation center]]
         :return:
         """
-
-        # # parameter
-        # joint_points, move_vectors, other_timbers, unit_move_vectors, rotation_base_points = [], [], [], [], []
-        #
-        # # 接合点の情報を取得
-        # for joint_pt_info in joint_pts_info:
-        #     joint_points.append(joint_pt_info[1])
-        #     move_vectors.append(joint_pt_info[2])
-        #     other_timbers.append(joint_pt_info[4])
-        #
-        # # 正規化した移動ベクトルを取得
-        # for move_vec in move_vectors:
-        #     unit_move_vec = Vector3d(move_vec.X / move_vec.Length, move_vec.Y / move_vec.Length,
-        #                              move_vec.Z / move_vec.Length)
-        #
-        #     unit_move_vectors.append(unit_move_vec)
 
         # rotation center
         for i, joint_pt_info in enumerate(joint_pts_info):
@@ -217,22 +218,16 @@ class Timber:
             intersect_info = Intersect.Intersection.CurveBrep(line, joint_pts_info[i][4].surface_breps[0], 0.001)
             joint_pts_info[i].append(intersect_info[2][0])
 
-        # print(joint_pts_info)
-
         # optimization parameter
-        tolerance = 40
         previous_curve_length_move_list = [1000, 1000]
         previous_curve_length_rotate_list = [1000, 1000]
+        is_first_rotate = True
 
-        is_vec_reverse = False
-        rotate_direction_list = [0, 0]
-        intersect_info_list = []
-        flag_optimized_joints = [0, 0]
-        base_pt_vector = Vector3d(joint_pts_info[1][5] - joint_pts_info[0][5])
+        # TODO 無くても良い？ 200728
+        rotation_direction_list = [1, -1]
 
-        rotate_direction_list = Optimization.get_rotate_direction(joint_pts_info, rotate_direction_list)
-
-        for i in range(100):
+        # main process
+        for i in range(200):
             intersect_info_list = []
 
             # 接合部1,2の交差曲線を取得
@@ -243,121 +238,123 @@ class Timber:
                 intersect_info_list.append(intersect_info)
 
             # 部材同士の関係性(交差曲線)から、処理方法を選択する
-            pattern_info, curve_length_list = Optimization.get_pattern_of_processing_joint(intersect_info_list)
+            pattern_info, curve_length_list = Optimization.get_pattern_of_processing_method(intersect_info_list)
 
             if pattern_info[0] == 2:
-                print("Optimization is success")
+                print("Optimization has been successful")
                 return
 
             # 選択した木材の情報
             index = pattern_info[1]
-            intersection_crv_length = pattern_info[2]
 
+            #### debug ####
             if pattern_info[0] == 0:
                 print("previous_move: {0}".format(previous_curve_length_move_list))
             else:
                 print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
             print("now: {0}".format(curve_length_list))
+            #### ----- ####
 
-            # 01. move timber
+            ### move timber ###
             if pattern_info[0] == 0:
-                if intersection_crv_length is None:
-                    origin_pt, transform_pt = Optimization.get_move_vector(joint_pts_info[index][1],
-                                                                           self.surface_breps[0],
-                                                                           joint_pts_info[index][4].surface_breps[0])
+                joint_pt_info = joint_pts_info[index]
+                joint_pt = joint_pt_info[1]
 
-                    self.translate_timber(origin_pt, transform_pt)
-                else:
-                    new_move_vec = Optimization.get_proper_move_vector(joint_pts_info[index][2],
-                                                                       intersection_crv_length,
-                                                                       joint_pts_info[index][1])
-                    transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
-                    self.translate_timber(joint_pts_info[index][1], transform_p)
+                # 交差曲線とjoint ptとのベクトルに変更でも良いかも？
+                unit_move_vec = joint_pt_info[2]
 
-                # judge  TODO 他にもある
-                if previous_curve_length_move_list[index] < intersection_crv_length:
-                    is_vec_reverse = True
+                other_timber = joint_pt_info[4]
 
+                crv_length = self.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
 
-                # reverse unit move vector TODO 改良の余地あり
-                if is_vec_reverse:
-                    joint_pts_info[index][2].Reverse()
-                    is_vec_reverse = False
+                previous_curve_length_move_list[index] = crv_length
 
-                # update
-                previous_curve_length_move_list[index] = curve_length_list[index]
-
-            # 02. rotate timber
+            #### rotate timber ###
             elif pattern_info[0] == 1:
 
-                # update if condition is satisfied
+                # if condition is satisfied, change rotate direction
                 if index == 0:
-                    if previous_curve_length_rotate_list[1] < curve_length_list[1] - 5:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                    if previous_curve_length_rotate_list[1] and curve_length_list[1] is None:
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
                     elif previous_curve_length_rotate_list[1] is None and curve_length_list[1]:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
-                    elif previous_curve_length_rotate_list[1] and curve_length_list[1] is None:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                    elif previous_curve_length_rotate_list[1] is None and curve_length_list[1] is None:
+                        pass
+
+                    elif previous_curve_length_rotate_list[1] < curve_length_list[1] - 5:
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
-                    # update
+                    # update parameter
                     previous_curve_length_rotate_list[1] = curve_length_list[1]
 
-
                 elif index == 1:
-                    if previous_curve_length_rotate_list[0] < curve_length_list[0] - 5:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                    if previous_curve_length_rotate_list[0] and curve_length_list[0] is None:
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
                     elif previous_curve_length_rotate_list[0] is None and curve_length_list[0]:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
-                    elif previous_curve_length_rotate_list[0] and curve_length_list[0] is None:
-                        if rotate_direction_list[index] == -1:
-                            rotate_direction_list[index] = 1
+                    elif previous_curve_length_rotate_list[0] is None and curve_length_list[0] is None:
+                        pass
+
+                    elif previous_curve_length_rotate_list[0] < curve_length_list[0] - 5:
+                        if rotation_direction_list[index] == -1:
+                            rotation_direction_list[index] = 1
                         else:
-                            rotate_direction_list[index] = -1
+                            rotation_direction_list[index] = -1
 
-                    # update
+                    # update parameter
                     previous_curve_length_rotate_list[0] = curve_length_list[0]
 
-                self.target_line.calc_vector()
+                # rotate angle
+                if is_first_rotate:
+                    rotation_direction_list[index], radian = Optimization.get_rotate_direction(index,
+                                                                                               joint_pts_info,
+                                                                                               curve_length_list,
+                                                                                               intersect_info_list)
+                    is_first_rotate = False
 
-                # angle = random.random() * rotate_direction_list[index]
-                angle = random.uniform(0.001, 0.005) * rotate_direction_list[index]
-                print("rotate_angle: {0}".format(angle))
+                else:
+                    if index == 0:
+                        radian = Optimization.get_proper_rotate_angle(curve_length_list[1])
+                    else:
+                        radian = Optimization.get_proper_rotate_angle(curve_length_list[0])
 
-                axis = joint_pts_info[index][4].target_line.vector
+                radian = radian * rotation_direction_list[index]
+                print(radian)
 
                 rotation_center = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[index][1][0])
+                axis = Vector3d(rotation_center - joint_pts_info[index][1])
 
-                self.rotate_timber(angle, axis, rotation_center)
+                self.rotate_timber(radian, axis, rotation_center)
 
+            ### debug ###
+            if intersect_info_list[0][1]:
+                scriptcontext.doc.Objects.AddCurve(intersect_info_list[0][1][0])
+            if intersect_info_list[1][1]:
+                scriptcontext.doc.Objects.AddCurve(intersect_info_list[1][1][0])
+            ### debug ###
 
-            # if pattern_info[0] == 0:
-            #     print("previous_move: {0}".format(previous_curve_length_move_list))
-            # else:
-            #     print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
-            # print("now: {0}".format(curve_length_list))
-
-
-            if i == 99:
-                print("Can not be optimization")
+            if i == 199:
+                print("Optimization has failed")
+                return False
 
             print("")
 

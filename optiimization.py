@@ -34,7 +34,7 @@ class Optimization:
                 target_line.end_p = temp_p
                 target_line.vector = Rhino.Geometry.Vector3d(target_line.end_p - target_line.start_p)
 
-            target_length = target_line.length + random.randint(300, 600)  # 木材の参照長さ
+            target_length = target_line.length + random.randint(300, 400)  # 木材の参照長さ
 
             return target_length, target_line
 
@@ -220,28 +220,129 @@ class Optimization:
     def get_proper_move_vector(unit_vec, intersection_crv_length, origin_pt):
 
         # オフセットする大きさ(Vector Length)を更新する
-        if intersection_crv_length <= 50:
+        if intersection_crv_length is None:
+            vec_length = random.random()  # TODO 値調整
+        elif intersection_crv_length <= 42:
+            vec_length = random.uniform(0.1, 0.3)
+        elif intersection_crv_length <= 50:
             vec_length = random.random()
         elif intersection_crv_length <= 60:
-            vec_length = 1.0
+            vec_length = random.uniform(1, 2)
         elif intersection_crv_length <= 80:
-            vec_length = 2.0
+            vec_length = random.uniform(2, 3)
         elif intersection_crv_length <= 100:
-            vec_length = 3.0
+            vec_length = random.uniform(3, 4)
         elif intersection_crv_length <= 120:
-            vec_length = 4.0
+            vec_length = random.uniform(4, 5)
         elif intersection_crv_length <= 200:
-            vec_length = 8.0
+            vec_length = random.uniform(8, 10)
         elif intersection_crv_length <= 300:
-            vec_length = 20.0
+            vec_length = random.uniform(10, 20)
         else:
-            vec_length = 40.0
+            vec_length = random.uniform(20, 40)
 
         # translate vector
         new_move_vec = Vector3d(unit_vec.X * vec_length, unit_vec.Y * vec_length, unit_vec.Z * vec_length)
         new_move_vec = Vector3d.Add(new_move_vec, Vector3d(origin_pt))
 
         return new_move_vec
+
+    @staticmethod
+    def get_proper_rotate_angle(intersection_crv_length):
+
+        # 交差曲線の長さに応じた回転角度を取得する
+        if intersection_crv_length is None:
+            angle = random.uniform(0.1, 0.2)  # TODO 値調整
+        elif intersection_crv_length <= 50:
+            angle = random.uniform(0.005, 0.01)
+        elif intersection_crv_length <= 60:
+            angle = random.uniform(0.01, 0.03)
+        elif intersection_crv_length <= 80:
+            angle = random.uniform(0.03, 0.06)
+        elif intersection_crv_length <= 100:
+            angle = random.uniform(0.06, 0.09)
+        elif intersection_crv_length <= 200:
+            angle = random.uniform(0.1, 0.3)
+        elif intersection_crv_length <= 300:
+            angle = random.uniform(0.5, 1)
+        else:
+            angle = random.uniform(1, 3)
+
+        radian = (angle * math.pi) / 180
+
+        return radian
+
+    @staticmethod
+    def get_rotate_direction(index, joint_pts_info, curve_length_list, intersect_info_list):
+
+        if index == 0:
+            joint_pt_info = joint_pts_info[1]
+            joint_pt = joint_pt_info[1]
+            self_timber = joint_pt_info[3]
+            other_timber = joint_pt_info[4]
+            radian = Optimization.get_first_rotate_angle(joint_pts_info, 1, curve_length_list[1])
+
+        else:
+            joint_pt_info = joint_pts_info[0]
+            joint_pt = joint_pt_info[1]
+            self_timber = joint_pt_info[3]
+            other_timber = joint_pt_info[4]
+            radian = Optimization.get_first_rotate_angle(joint_pts_info, 0, curve_length_list[0])
+
+        # rotate angle
+        temp_radian_list = [radian, -radian]
+
+        # axis of rotation and rotation center
+        rotation_center = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[index][1][0])
+        axis = Vector3d(rotation_center - joint_pt)
+
+        temp_intersection_list = []
+        for i in range(2):
+            # rotate timber
+            self_timber.rotate_timber_in_program(temp_radian_list[i], axis, rotation_center)
+
+            # get the length of the intersection curve
+            intersect_info = Intersect.Intersection.BrepBrep(self_timber.surface_breps[0],
+                                                             other_timber.surface_breps[0], 0.01)
+
+            sum_crv_length = 0
+            if intersect_info[1]:
+                for intersection_curve in intersect_info[1]:
+                    sum_crv_length += intersection_curve.GetLength()
+            else:
+                sum_crv_length = 0
+
+            # append curve length information to list
+            temp_intersection_list.append(sum_crv_length)
+
+            # reset the rotation process
+            self_timber.rotate_timber_in_program(-temp_radian_list[i], axis, rotation_center)
+
+        print("temp curve length: {0}".format(temp_intersection_list))
+
+        if index == 0:
+            length_current_intersection_crv = curve_length_list[1]
+        else:
+            length_current_intersection_crv = curve_length_list[0]
+
+        # calculate difference length of two curves
+        diff_length_crv = []
+        if length_current_intersection_crv is None:
+            length_current_intersection_crv = 0
+
+            for i in range(2):
+                diff = length_current_intersection_crv - temp_intersection_list[i]
+                diff_length_crv.append(diff)
+        else:
+            for i in range(2):
+                diff = temp_intersection_list[i] - length_current_intersection_crv
+                diff_length_crv.append(diff)
+
+        # define rotation direction by difference length
+        if diff_length_crv[0] < diff_length_crv[1]:
+            return 1, radian
+        else:
+            return -1, radian
 
     @staticmethod
     def get_joint_pts_info(adding_timbers, timber_list_in_playground):
@@ -373,7 +474,8 @@ class Optimization:
         origin_pt = Brep.ClosestPoint(self_timber_srf, base_pt)
         transform_pt = Brep.ClosestPoint(other_timber_srf, base_pt)
 
-        # move_vec = Vector3d(pt1.X - pt2.X, pt1.Y - pt2.Y, pt1.Z - pt2.Z)
+        move_vec = Vector3d(transform_pt.X - origin_pt.X, transform_pt.Y - origin_pt.Y, transform_pt.Z - origin_pt.Z)
+        # print(move_vec.Length)
 
         return origin_pt, transform_pt
 
@@ -391,19 +493,19 @@ class Optimization:
         return mid_pt
 
     @staticmethod
-    def get_pattern_of_processing_joint(intersect_info_list):
+    def get_pattern_of_processing_method(intersect_info_list):
 
         intersect_crv_length_list = []
         curve_length_list = [0, 0]
 
         for intersect_info in intersect_info_list:
+            sum_crv_length = 0
             if intersect_info[1]:
-                intersect_curve = intersect_info[1][0]
-                intersect_crv_length_list.append(intersect_curve.GetLength())
+                for crv in intersect_info[1]:
+                    sum_crv_length += crv.GetLength()
+                intersect_crv_length_list.append(sum_crv_length)
             else:
                 intersect_crv_length_list.append(None)
-
-        # print(intersect_crv_length_list)
 
         # 場合わけを行う
         rating_list = [0, 0]
@@ -416,7 +518,7 @@ class Optimization:
                 curve_length_list[i] = None
                 continue
 
-            if intersect_crv_length <= tolerance:
+            if 0 < intersect_crv_length <= tolerance:
                 rating_list[i] = 3
                 curve_length_list[i] = intersect_crv_length
                 continue
@@ -445,7 +547,7 @@ class Optimization:
 
         elif sum(rating_list) == 4:
             type_transform = 0
-            if rating_list[0] > rating_list[1]:
+            if intersect_crv_length_list[0] > intersect_crv_length_list[1]:
                 select_index = 1
             else:
                 select_index = 0
@@ -466,10 +568,10 @@ class Optimization:
             type_transform = 0
             select_index = 0
 
-        return [type_transform, select_index, intersect_crv_length_list[select_index]], curve_length_list
+        return [type_transform, select_index], curve_length_list
 
     @staticmethod
-    def get_rotate_direction(joint_pts_info, rotate_direction_list):
+    def old_get_rotate_direction(joint_pts_info, rotate_direction_list):
 
         for index in range(len(joint_pts_info)):
 
@@ -482,42 +584,63 @@ class Optimization:
                 base_pt_end = joint_pts_info[0][1]
                 trans_pt = joint_pts_info[0][5]
 
-            vec1 = Vector3d(Point3d.Subtract(trans_pt, base_pt_start))
-            vec2 = Vector3d(Point3d.Subtract(base_pt_end, base_pt_start))
+            ### debug ###
+            # line1 = Line(base_pt_start, base_pt_end)
+            # line2 = Line(base_pt_start, trans_pt)
+            #
+            # scriptcontext.doc.Objects.AddLine(line1)
+            # scriptcontext.doc.Objects.AddLine(line2)
+            ### ----- ###
+
+            # define plane and remap coordinate to plane space TODO 毎回平面を設定すると全部 + or - の値になってしまう
+            temp_plane = Plane(base_pt_start, base_pt_end, trans_pt)
+
+            remap_base_pt_start = temp_plane.RemapToPlaneSpace(base_pt_start)
+            remap_base_pt_end = temp_plane.RemapToPlaneSpace(base_pt_end)
+            remap_trans_pt = temp_plane.RemapToPlaneSpace(trans_pt)
+
+            vec1 = Vector3d(Point3d.Subtract(remap_trans_pt[1], remap_base_pt_start[1]))
+            vec2 = Vector3d(Point3d.Subtract(remap_base_pt_end[1], remap_base_pt_start[1]))
 
             cross_vec = Vector3d.CrossProduct(vec1, vec2)
 
             # TODO
-            if cross_vec.Z < 0:
-                rotate_direction_list[index] = 1  # - rotate
+            if cross_vec.Z > 0:
+                rotate_direction_list[index] = 1  # + rotate
             else:
-                rotate_direction_list[index] = -1  # + rotate
+                rotate_direction_list[index] = -1  # - rotate
 
         return rotate_direction_list
 
     @staticmethod
-    def get_rotate_direction2(base_pt_start, base_pt_end, transform_pt):
+    def get_first_rotate_angle(joint_pts_info, index, curve_length):
 
-        vec1 = Vector3d(Point3d.Subtract(base_pt_end, base_pt_start))
-        vec2 = Vector3d(Point3d.Subtract(transform_pt, base_pt_start))
+        base_pt_start = joint_pts_info[index][1]
 
-        cross_vec1 = Vector3d.CrossProduct(vec1, vec2)
-        cross_vec2 = Vector3d.CrossProduct(vec2, vec1)
-
-        # print(cross_vec1)
-        # print(cross_vec2)
-
-        if cross_vec1.Z < 0:
-            angle = 0.001
+        if index == 0:
+            base_pt_end = joint_pts_info[1][1]
+            trans_pt = joint_pts_info[1][5]
         else:
-            angle = -0.001
+            base_pt_end = joint_pts_info[0][1]
+            trans_pt = joint_pts_info[0][5]
 
-        return angle
+        # TODO 半径分の角度を考慮しないといけない --> 現状は1.3倍することで値を調整している
+        vec1 = Vector3d(base_pt_end - base_pt_start)
+        vec2 = Vector3d(trans_pt - base_pt_start)
 
-        # debug
-        # line1 = Line(base_pt_start, base_pt_end)
-        # line2 = Line(base_pt_start, transform_pt)
-        #
-        # scriptcontext.doc.Objects.AddLine(line1)
-        # scriptcontext.doc.Objects.AddLine(line2)
-        #
+        vec_radian = Vector3d.VectorAngle(vec1, vec2)
+        vec_radian = vec_radian * 1.3
+
+        # 回転方向を決定する --> 交差曲線の長さから考察
+        if curve_length is None:
+            print("curve length is none")
+
+            # 回転方向を決定する --> +方向、-方向に回転させた時の交差曲線の長さから考察
+
+
+
+        elif curve_length < 200:
+            print("Do not Change")
+            vec_radian = Optimization.get_proper_rotate_angle(curve_length)
+
+        return vec_radian

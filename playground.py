@@ -84,7 +84,8 @@ class Playground:
         self.adding_timber.translate_timber(origin_p, transform_p)
 
         # rotation
-        vector_timber = Rhino.Geometry.Vector3d(self.adding_timber.center_line.Last - self.adding_timber.center_line.First)
+        vector_timber = Rhino.Geometry.Vector3d(
+            self.adding_timber.center_line.Last - self.adding_timber.center_line.First)
         angle = Vector3d.VectorAngle(vector_timber, self.adding_target_line.vector)
         axis = Vector3d.CrossProduct(vector_timber, self.adding_target_line.vector)
         rotation_center = self.adding_timber.center_line.First
@@ -95,52 +96,54 @@ class Playground:
         # ターゲット曲線の情報から接合点、ベクトルを計算し、取得する
         joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timber_list_in_playground)
 
-        # 接する面積の最小化を行う TODO ここは汎用的(どんな追加状況でも生成可能)なアルゴリズムに変更する
-        optimized_timbers = []
-        optimized_unit_move_vec = []
+        # 接する面積の最小化を行う
+        # optimized_timbers = []
+        # optimized_unit_move_vec = []
 
-        # print("num_joint_pt: {0}".format(len(joint_pts_info)))
+        # number of joint points is 1
+        if len(joint_pts_info) == 1:
+            joint_pt = joint_pts_info[0][1]
+            unit_move_vec = joint_pts_info[0][2]
+            self_timber = joint_pts_info[0][3]
+            other_timber = joint_pts_info[0][4]
 
-        for i in range(len(joint_pts_info)):
-            joint_pt = joint_pts_info[i][1]
-            unit_move_vec = joint_pts_info[i][2]
-            self_timber = joint_pts_info[i][3]
-            other_timber = joint_pts_info[i][4]
-
-            # TODO 汎用的なアルゴリズムに変更する
-            if self_timber in optimized_timbers:
-                # TODO switchした際にself timberはgenerated_timberではだめ！
-                if other_timber in self.timber_list_in_playground:
-                    # print("other timber is already used in playground")
-
-                    # test
-                    self_timber.bridge_joint_area(joint_pts_info)
-                    return
-
-                else:
-                    self_timber = other_timber
-                    other_timber = joint_pts_info[i][3]
-
-            # vector TODO 汎用的なアルゴリズムに変更する
-            if optimized_unit_move_vec:
-                angle = Vector3d.VectorAngle(optimized_unit_move_vec[0], unit_move_vec)
-                if angle == 0:
-                    pass
-
-                else:
-                    unit_move_vec.Reverse()
+            # # if optimized timber is used by self timber, switch self timber and other timber
+            # if self_timber in optimized_timbers:
+            #     print("--- debug ---")
+            #     self_timber = other_timber
+            #     other_timber = joint_pts_info[3]
 
             print("timber_{0}".format(self_timber.id))
             print("timber_{0}".format(other_timber.id))
 
             # optimization
-            self_timber.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
+            flag = self_timber.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
+            if flag is False:
+                return flag
+            else:
+                return True
 
-            # append list
-            optimized_timbers.append(self_timber)
-            optimized_timbers.append(other_timber)
+            # # append used timber to list
+            # optimized_timbers.append(self_timber)
+            # optimized_timbers.append(other_timber)
 
-            optimized_unit_move_vec.append(unit_move_vec)
+        # number of joint points is 2
+        elif len(joint_pts_info) == 2:
+            # optimization
+            self_timber = joint_pts_info[0][3]
+            flag = self_timber.bridge_joint_area(joint_pts_info)
+            if flag is False:
+                return flag
+            else:
+                return True
+
+            # # append list
+            # optimized_timbers.append(self_timber)
+            # optimized_timbers.append(other_timber)
+
+        else:
+            print("There are not joint points.")
+            return True
 
     def reset(self, explode_target_lines):
         # 生成した部材を記録しておく

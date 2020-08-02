@@ -6,10 +6,9 @@ from playground import *
 from target_line import *
 
 if __name__ == "__main__":
-    # start = time.time()
 
     # parameter
-    num_processes = 3
+    num_processes = 7
 
     # playgroundインスタンスを生成
     playground = Playground()
@@ -25,6 +24,7 @@ if __name__ == "__main__":
         # ターゲット曲線を取得する
         rs.Command("_Line")
         # rs.Command("_PolyLine")
+
         poly_target_line = rs.GetObjects("Pick up target lines", rs.filter.curve)
         explode_target_lines = rs.ExplodeCurves(poly_target_line, True)
 
@@ -42,11 +42,12 @@ if __name__ == "__main__":
             playground.transform_timber()
 
         # 03. 木材の表面の最適化を行う
-        playground.minimized_joint_area()
+        flag = playground.minimized_joint_area()
+
+        if not flag:
+            break
 
         # reset
         playground.reset(explode_target_lines)
 
         # TODO 00. csvファイル(データベース)の木材情報を更新する
-
-    # print("Done: {0}".format(time.time() - start))
