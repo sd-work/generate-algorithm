@@ -22,7 +22,7 @@ class Optimization:
         pass
 
     @staticmethod
-    def edit_adding_timber_range(target_line):
+    def edit_adding_timber_range(target_line, num_of_joint_pt):
 
         # 部材の端点のいずれかがGLから生成される場合
         if target_line.start_p.Z == 0 or target_line.end_p.Z == 0:
@@ -40,14 +40,24 @@ class Optimization:
 
         # 部材の端点のいずれもGLから生成されない場合
         else:
-            vec1 = Vector3d(target_line.start_p - target_line.mid_p)
-            vec2 = Vector3d(target_line.end_p - target_line.mid_p)
+            if num_of_joint_pt == "1":
+                vec1 = Vector3d(target_line.start_p - target_line.mid_p)
+                vec2 = Vector3d(target_line.end_p - target_line.start_p)
 
-            unit_vec1 = Vector3d(vec1.X / vec1.Length, vec1.Y / vec1.Length, vec1.Z / vec1.Length)
-            unit_vec2 = Vector3d(vec2.X / vec2.Length, vec2.Y / vec2.Length, vec2.Z / vec2.Length)
+                unit_vec1 = Vector3d(vec1.X / vec1.Length, vec1.Y / vec1.Length, vec1.Z / vec1.Length)
+                unit_vec2 = Vector3d(vec2.X / vec2.Length, vec2.Y / vec2.Length, vec2.Z / vec2.Length)
 
-            vec_length1 = vec1.Length + random.randint(300, 600)
-            vec_length2 = vec2.Length + random.randint(300, 600)
+                vec_length1 = vec1.Length + random.randint(400, 800)
+                vec_length2 = vec2.Length + random.randint(0, 300)
+            else:
+                vec1 = Vector3d(target_line.start_p - target_line.mid_p)
+                vec2 = Vector3d(target_line.end_p - target_line.mid_p)
+
+                unit_vec1 = Vector3d(vec1.X / vec1.Length, vec1.Y / vec1.Length, vec1.Z / vec1.Length)
+                unit_vec2 = Vector3d(vec2.X / vec2.Length, vec2.Y / vec2.Length, vec2.Z / vec2.Length)
+
+                vec_length1 = vec1.Length + random.randint(300, 700)
+                vec_length2 = vec2.Length + random.randint(300, 700)
 
             new_vec1 = Vector3d(unit_vec1.X * vec_length1, unit_vec1.Y * vec_length1, unit_vec1.Z * vec_length1)
             new_vec2 = Vector3d(unit_vec2.X * vec_length2, unit_vec2.Y * vec_length2, unit_vec2.Z * vec_length2)
@@ -528,7 +538,7 @@ class Optimization:
                 curve_length_list[i] = intersect_crv_length
                 continue
 
-        print("rating: {0}".format(rating_list))
+        # print("rating: {0}".format(rating_list))
 
         # 変形形式を決定し、戻り値として返す
         type_transform = None  # type_transform -> 0: move / 1: rotation / 2: Optimization is success

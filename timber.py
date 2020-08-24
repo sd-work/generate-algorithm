@@ -24,8 +24,13 @@ from optiimization import *
 
 class Timber:
 
-    def __init__(self, id, length=None, path_to_csv=None):
+    def __init__(self, id, length=None, path_to_csv=None, parent_layer=None):
         self.id = id
+        self.parent_layer = parent_layer
+        self.timber_layer = None
+        self.surface_layer = None
+        self.text_id_layer = None
+        self.center_line_layer = None
         self.generate_pattern = None
         self.text_dot_id = None
         self.center_line = None
@@ -37,6 +42,8 @@ class Timber:
         self.path_to_csv = path_to_csv
         self.is_used = False
         self.joint_pts_info = []
+        self.nodes = []
+        self.edges = []
 
         # temp parameter
         self.section_curves_info = []
@@ -64,13 +71,23 @@ class Timber:
                                      self.section_curves_info[-1][2])
         self.length = start.DistanceTo(end)
 
+    def create_timber_layer(self):
+        self.timber_layer = rs.AddLayer(self.id, [0, 0, 0], True, False, self.parent_layer)
+
+        self.center_line_layer = rs.AddLayer("center line", [0, 0, 0], True, False, self.timber_layer)
+        self.surface_layer = rs.AddLayer("surface", [0, 0, 0], True, False, self.timber_layer)
+        self.text_id_layer = rs.AddLayer("text id", [0, 0, 0], True, False, self.timber_layer)
+
     def generate_timber(self):
+        # layerを作成
+        self.create_timber_layer()
+
         # csvファイルから木材の情報を取得し、変数に代入する
         with open(self.path_to_csv, "r") as csv_file:
             reader = csv.reader(csv_file)
             self.section_curves_info = [section_crv_info for section_crv_info in reader]
 
-        # 断面曲線情報から木材のsrfモデルを生成
+        # 断面曲線情報から木材のRhinoモデルを生成
         for crv_info in self.section_curves_info:
             point = Rhino.Geometry.Point3d(float(crv_info[0]), float(crv_info[1]), float(crv_info[2]))
             section_curve = NurbsCurve.CreateFromCircle(Rhino.Geometry.Circle(point, float(crv_info[3])))
@@ -87,16 +104,19 @@ class Timber:
         surfaces = self.surface_breps[0].Surfaces
         self.surface = surfaces[0]
 
-        # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
+        # Rhinoモデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         # 中心線
-        # self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_line)
         self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_points)
+        rs.ObjectLayer(self.center_line_guid, self.center_line_layer)
 
         # サーフェス
         for srf in self.surface_breps:
             self.surface_guid = scriptcontext.doc.Objects.AddBrep(srf)
+            rs.ObjectLayer(self.surface_guid, self.surface_layer)
+
         # dot text
         self.text_dot_id = scriptcontext.doc.Objects.AddTextDot(self.id, self.center_line.PointAt(0))
+        rs.ObjectLayer(self.text_dot_id, self.text_id_layer)
 
         # 木材を使用済みにする
         self.is_used = True
@@ -185,17 +205,19 @@ class Timber:
 
             # 交差曲線の長さが許容値(tolerance)より短い場合
             if 0 < intersection_crv_length < tolerance:
-                print("Final intersection curve length: {0}".format(intersection_crv_length))
+                # print("Final intersection curve length: {0}".format(intersection_crv_length))
+
+                joint_pt = Optimization.get_mid_pt_in_closed_crv(intersect_info[1][0])
 
                 ### debug ###
-                if intersect_info[1]:
-                    scriptcontext.doc.Objects.AddCurve(intersect_info[1][0])
+                # if intersect_info[1]:
+                #     scriptcontext.doc.Objects.AddCurve(intersect_info[1][0])
 
-                return intersection_crv_length
+                return intersection_crv_length, joint_pt
             else:
                 new_move_vec = Optimization.get_proper_move_vector(unit_move_vec, intersection_crv_length, joint_point)
                 transform_p = Point3d(new_move_vec.X, new_move_vec.Y, new_move_vec.Z)
-                self.translate_timber(joint_point, transform_p)  # move timber
+                self.translate_timber(joint_point, transform_p)
 
             if i == 199:
                 print("Optimization has failed")
@@ -242,17 +264,21 @@ class Timber:
 
             if pattern_info[0] == 2:
                 print("Optimization has been successful")
-                return
+
+                joint_pt1 = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[0][1][0])
+                joint_pt2 = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[1][1][0])
+
+                return [joint_pt1, joint_pt2]
 
             # 選択した木材の情報
             index = pattern_info[1]
 
             #### debug ####
-            if pattern_info[0] == 0:
-                print("previous_move: {0}".format(previous_curve_length_move_list))
-            else:
-                print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
-            print("now: {0}".format(curve_length_list))
+            # if pattern_info[0] == 0:
+            #     print("previous_move: {0}".format(previous_curve_length_move_list))
+            # else:
+            #     print("previous_rotate: {0}".format(previous_curve_length_rotate_list))
+            # print("now: {0}".format(curve_length_list))
             #### ----- ####
 
             ### move timber ###
@@ -267,10 +293,12 @@ class Timber:
 
                 crv_length = self.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
 
-                previous_curve_length_move_list[index] = crv_length
+                previous_curve_length_move_list[index] = crv_length[0]
 
             #### rotate timber ###
             elif pattern_info[0] == 1:
+
+                tolerance_diff = 10
 
                 # if condition is satisfied, change rotate direction
                 if index == 0:
@@ -289,7 +317,7 @@ class Timber:
                     elif previous_curve_length_rotate_list[1] is None and curve_length_list[1] is None:
                         pass
 
-                    elif previous_curve_length_rotate_list[1] < curve_length_list[1] - 5:
+                    elif previous_curve_length_rotate_list[1] < curve_length_list[1] - tolerance_diff:
                         if rotation_direction_list[index] == -1:
                             rotation_direction_list[index] = 1
                         else:
@@ -314,7 +342,7 @@ class Timber:
                     elif previous_curve_length_rotate_list[0] is None and curve_length_list[0] is None:
                         pass
 
-                    elif previous_curve_length_rotate_list[0] < curve_length_list[0] - 5:
+                    elif previous_curve_length_rotate_list[0] < curve_length_list[0] - tolerance_diff:
                         if rotation_direction_list[index] == -1:
                             rotation_direction_list[index] = 1
                         else:
@@ -338,7 +366,7 @@ class Timber:
                         radian = Optimization.get_proper_rotate_angle(curve_length_list[0])
 
                 radian = radian * rotation_direction_list[index]
-                print(radian)
+                # print(radian)
 
                 rotation_center = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[index][1][0])
                 axis = Vector3d(rotation_center - joint_pts_info[index][1])
@@ -346,17 +374,17 @@ class Timber:
                 self.rotate_timber(radian, axis, rotation_center)
 
             ### debug ###
-            if intersect_info_list[0][1]:
-                scriptcontext.doc.Objects.AddCurve(intersect_info_list[0][1][0])
-            if intersect_info_list[1][1]:
-                scriptcontext.doc.Objects.AddCurve(intersect_info_list[1][1][0])
+            # if intersect_info_list[0][1]:
+            #     scriptcontext.doc.Objects.AddCurve(intersect_info_list[0][1][0])
+            # if intersect_info_list[1][1]:
+            #     scriptcontext.doc.Objects.AddCurve(intersect_info_list[1][1][0])
             ### debug ###
 
             if i == 199:
                 print("Optimization has failed")
                 return False
 
-            print("")
+            # print("")
 
     def move_timber(self, other_timber, joint_point, move_vec):
 

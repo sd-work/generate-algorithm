@@ -76,7 +76,7 @@ class PointVector:
         return self.x * vec.x + self.y * vec.y + self.z * vec.z
 
     def cross(self, vec):
-        
+        pass
 
 
 
