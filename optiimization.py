@@ -328,7 +328,7 @@ class Optimization:
             # reset the rotation process
             self_timber.rotate_timber_in_program(-temp_radian_list[i], axis, rotation_center)
 
-        print("temp curve length: {0}".format(temp_intersection_list))
+        # print("temp curve length: {0}".format(temp_intersection_list))
 
         if index == 0:
             length_current_intersection_crv = curve_length_list[1]
@@ -484,21 +484,22 @@ class Optimization:
         origin_pt = Brep.ClosestPoint(self_timber_srf, base_pt)
         transform_pt = Brep.ClosestPoint(other_timber_srf, base_pt)
 
-        move_vec = Vector3d(transform_pt.X - origin_pt.X, transform_pt.Y - origin_pt.Y, transform_pt.Z - origin_pt.Z)
+        # move_vec = Vector3d(transform_pt.X - origin_pt.X, transform_pt.Y - origin_pt.Y, transform_pt.Z - origin_pt.Z)
         # print(move_vec.Length)
 
         return origin_pt, transform_pt
 
     @staticmethod
     def get_mid_pt_in_closed_crv(target_crv):
+        divide_num = 12
+
         crv_domain = target_crv.Domain
-        crv_domain_unit_range = (crv_domain[1] - crv_domain[0]) / 12
+        crv_domain_unit_range = (crv_domain[1] - crv_domain[0]) / divide_num
 
         pt1 = target_crv.PointAt(crv_domain_unit_range * 0)
-        pt2 = target_crv.PointAt(crv_domain_unit_range * 12 / 2)
+        pt2 = target_crv.PointAt(crv_domain_unit_range * (divide_num / 2))
 
         mid_pt = Line(pt1, pt2).PointAt(0.5)
-        # scriptcontext.doc.Objects.AddPoint(mid_pt)
 
         return mid_pt
 
@@ -643,14 +644,14 @@ class Optimization:
 
         # 回転方向を決定する --> 交差曲線の長さから考察
         if curve_length is None:
-            print("curve length is none")
+            # print("curve length is none")
 
             # 回転方向を決定する --> +方向、-方向に回転させた時の交差曲線の長さから考察
-
+            pass
 
 
         elif curve_length < 200:
-            print("Do not Change")
+            # print("Do not Change")
             vec_radian = Optimization.get_proper_rotate_angle(curve_length)
 
         return vec_radian
