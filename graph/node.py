@@ -15,10 +15,10 @@ class Node:
         self.x = point.X
         self.y = point.Y
         self.z = point.Z
-        self.connected_nodes = []
+        self.connected_nodes = []  # node instances
 
         self.having_edges = []  # Nodeが保持しているエッジ群
-        self.is_on_GL = is_on_gl
+        self.is_on_GL = is_on_gl  # NodeがGLに説獄しているかどうかを判定するフラグ
 
         # Variables specific to virtual graph
         self.nodes_of_real_graph = nodes_of_real_graph  # Nodes of Real graph that make up a node of Virtual graph
@@ -39,11 +39,14 @@ class Node:
         if isinstance(nodes, list):
             self.connected_nodes = []
             self.connected_nodes = nodes
-            self.sort_connected_nodes()
         else:
             self.connected_nodes = []
             self.connected_nodes.append(nodes)
-            self.sort_connected_nodes()
+
+            # if nodes in self.connected_nodes:
+            #     pass
+            # else:
+            #     self.connected_nodes.append(nodes)
 
     def sort_connected_nodes(self):
         temp_connected_nodes = []
@@ -77,3 +80,5 @@ class Node:
 
         else:
             return False
+
+

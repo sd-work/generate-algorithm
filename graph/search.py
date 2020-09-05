@@ -4,54 +4,62 @@ import copy
 
 
 class Search:
-
     pos_in_cycle = -1  # サイクル中に含まれるノード
     history = []  # 訪問履歴
     history_list = []
     pre_order = []  # 行きがけ
     post_order = []  # 帰りがけ
-
-    node_index_dict = {}  # [Node id, index]
+    node_index_dict = {}  # [Node id, list index]
+    num_graph_nodes = 0  # グラフが持つノードの数
 
     @staticmethod
     def detect_cycles_in_graph(graph):
         Search.pre_order = [False for _ in range(len(graph.contiguous_list))]
         Search.post_order = [False for _ in range(len(graph.contiguous_list))]
 
-        ###
+        # 各ノードのID番号と隣接リストのindex番号をリンクさせる(辞書型)
         for i, v_node in enumerate(graph.nodes):
             Search.node_index_dict[str(v_node.id)] = i
-        print(Search.node_index_dict)
-        ###
 
+        # 各ノードの隣接リスト
         graph_contiguous_list = graph.contiguous_list
+        Search.num_graph_nodes = len(graph_contiguous_list)
 
-        start_node = graph.nodes[0]
-        start_node_id = start_node.id
+        start_node_id = graph.nodes[0].id
 
         # DFS
         Search.dfs_detect_cycles_in_graph(graph_contiguous_list, start_node_id, -1)
 
         if Search.history_list:
             cycles = []
-            
+
             for history in Search.history_list:
                 cycle = []
 
-                print(history)
+                print("History: {0}".format(history))
+
+                flag_node_id = history[0]
+                history.pop(0)
+
+                # print("History_edit: {0}".format(history))
 
                 while history:
                     node = history[-1]  # リストの最後の要素を取得
                     cycle.append(node)
                     history.pop()  # 末尾の要素を削除
 
-                    if node == history[0]:
-                        # # サイクルが三角形である場合
-                        # if len(cycle) == 3:
-                        #     cycles.append(cycle)
-                        cycles.append(cycle)
+                    if node == flag_node_id:
+                        if graph.id == "real":
+                            # サイクルが三角形(3辺)である場合
+                            if len(cycle) == 3:
+                                cycles.append(cycle)
+                                break
 
-                        break
+                        elif graph.id == "virtual":
+                            # サイクルの辺が3辺以上である場合
+                            if len(cycle) >= 3:
+                                cycles.append(cycle)
+                                break
         else:
             cycles = []
 
@@ -62,10 +70,9 @@ class Search:
     @staticmethod
     def dfs_detect_cycles_in_graph(graph, node_id, previous_node_id=-1):
         """
-        
-        :param graph: 
-        :param node_id: index
-        :param previous_node_id: id
+        :param graph: グラフが持つ各ノードの隣接リスト
+        :param node_id: あるノードのid番号
+        :param previous_node_id: ひとつ前のノードのid番号
         :return: 
         """
 
@@ -79,7 +86,7 @@ class Search:
 
         # 指定されたノード(親)の子ノードを取得 -> next_node is Node instance -> node.id (int or str)
         for next_node in graph[list_index]:
-            # print("-- next node:{0} previous_node_id:{1} --".format(next_node.id, previous_node_id.id))
+            # print("-- next node:{0} previous_node_id:{1} --".format(next_node.id, previous_node_id))
 
             select_node_id = next_node.id
             select_index = Search.node_index_dict[str(select_node_id)]
@@ -101,9 +108,6 @@ class Search:
 
                 Search.history_list.append(temp_history)
 
-                # reset
-                Search.history = []
-
             if Search.pre_order[select_index]:  # 訪問済み
                 continue
 
@@ -114,6 +118,7 @@ class Search:
             pass
         else:
             Search.history.pop()
+
         Search.post_order[list_index] = True  # 帰りがけ順
 
     @staticmethod

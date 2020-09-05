@@ -31,13 +31,13 @@ class Playground:
         self.target_line_in_playground = []  # 遊び場を構成しているターゲット曲線
 
         # About Real graph
-        self.real_graph = Graph([], [])
+        self.real_graph = Graph("real", [], [])
         self.nodes_in_playground = []  # 現状の構築物に存在するノード群
         self.edges_in_playground = []  # 現状の構築物に存在するエッジ群
         self.cycle_in_playground = []  # 現状の構築物に存在するサイクル群
 
         # About Virtual graph
-        self.virtual_graph = Graph([], [])
+        self.virtual_graph = Graph("virtual", [], [])
         self.nodes_in_virtual = []  # virtual graphに存在するノード群
         self.edges_in_virtual = []  # virtual graphに存在するエッジ群
         self.cycle_in_virtual = []  # virtual graphに存在するサイクル群
@@ -50,7 +50,7 @@ class Playground:
     def generate_timber_info(self, num_timber):
         for id in range(num_timber):
             timber = Timber(id)
-            timber.generate_timber_info(random.randint(1200, 2000))
+            timber.generate_timber_info(random.randint(700, 2000))
             self.timber_list_in_database.append(timber)
 
             # 木材の情報をcsvファイルとして書き出す
@@ -96,13 +96,16 @@ class Playground:
         rs.AddLayer("v-edge", [0, 0, 0], True, False, "virtual_graph")
         rs.AddLayer("v-cycle", [0, 0, 0], True, False, "virtual_graph")
 
-    def select_adding_timber(self, target_line, num_of_joint_pt):
+    def get_target_line(self):
+        self.adding_target_line = TargetLine.get_target_line()
+
+    def select_adding_timber(self):
 
         # 取得したターゲット曲線情報から、木材を追加するための新たなターゲット曲線情報を取得
-        target_length, self.adding_target_line = Optimization.edit_adding_timber_range(target_line, num_of_joint_pt)
+        # target_length, self.adding_target_line = Optimization.edit_adding_timber_range(target_line, num_of_joint_pt)
 
         # 木材の参照長さに最も近似した長さの木材を検索し、取得する
-        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, target_length)
+        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, self.adding_target_line)
 
         self.adding_timber = select_timber
         self.adding_timber.target_line = self.adding_target_line  # ターゲット曲線を設定
@@ -110,7 +113,7 @@ class Playground:
         self.adding_timbers.append(self.adding_timber)
 
         #  ターゲット曲線から木材の生成パターンを判定する
-        self.adding_timber.judge_timber_pattern(target_line, self.timber_list_in_playground)
+        self.adding_timber.judge_timber_pattern(self.adding_target_line, self.timber_list_in_playground)
 
         # 遊び場を構成しているターゲット曲線群に追加
         self.target_line_in_playground.append(self.adding_target_line)
@@ -172,6 +175,8 @@ class Playground:
             return True
 
     def determine_status_of_structure(self):
+        print("num_joint_pts: {0}".format(num_joint_pts))
+
         num_nodes_in_playground = len(self.real_graph.nodes)
 
         for adding_timber in self.adding_timbers:
@@ -201,21 +206,11 @@ class Playground:
                 nodes.extend(joint_pts_nodes)
 
             # Detecting edges real graph
-            edges = self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_playground,
-                                                              self.nodes_in_playground, joint_pts_nodes, adding_timber)
+            self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_playground,
+                                                      self.nodes_in_playground, joint_pts_nodes, adding_timber)
 
             # Linking Node and Edge information to adding timber
             adding_timber.nodes.extend(nodes)  # Node
-            adding_timber.edges.extend(edges)  # Edge
-
-            # debug
-            # for timber in self.timber_list_in_playground:
-            #     print("ID: {0}".format(timber.id))
-            #     for n in timber.nodes:
-            #         print(n.id)
-            #     for e in timber.edges:
-            #         print(e.id)
-            #     print("")
 
         # Constructing Real Graphs
         self.real_graph.set_graph(self.nodes_in_playground, self.edges_in_playground)
@@ -225,83 +220,112 @@ class Playground:
         cycles = Search.detect_cycles_in_graph(self.real_graph)
         print("real cycles: {0}".format(cycles))
 
+        # If some cycles are detected
         if cycles:
             # Drawing cycle mesh in doc
-            cycle = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
+            cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
 
             # If a new cycle is detected
-            if cycle:
-                """Get Node in Virtual graph"""
-                virtual_node = Node("v" + str(len(self.cycle_in_playground)), cycle.centroid, cycle.composition_nodes,
-                                    cycle.is_on_GL)
+            if cycles:
+                # Maintain cycle information
+                for real_cycle in cycles:
+                    self.cycle_in_playground.append(real_cycle)
 
-                # Draw node in doc
-                virtual_node.generate_node_point("v-node")
+                    """Get virtual Node based on a new cycle"""
+                    virtual_node = Node("v" + str(len(self.cycle_in_playground)), real_cycle.centroid,
+                                        real_cycle.composition_nodes,
+                                        real_cycle.is_on_GL)
 
-                # Maintain node information
-                self.nodes_in_virtual.append(virtual_node)
-
-                """Get Edge in Virtual graph"""
-                # Search edges of virtual graph
-                adding_virtual_nodes = self.virtual_graph.detect_edge_of_virtual_graph(virtual_node,
-                                                                                       self.edges_in_playground,
-                                                                                       self.edges_in_virtual)
-
-                # Maintain node information
-                for adding_virtual_node in adding_virtual_nodes:
-                    if adding_virtual_node in self.nodes_in_virtual:
-                        continue
-                    else:
-                        self.nodes_in_virtual.append(adding_virtual_node)
-
-                # Judge whether nodes in virtual have two GL node
-                gl_nodes = []
-
-                for v_node in self.nodes_in_virtual:
-                    if v_node.is_on_GL:
-                        gl_nodes.append(v_node)
-
-                if len(gl_nodes) == 2:
-                    # Record the nodes to which each node is connected
-                    gl_nodes[0].connected_nodes.append(gl_nodes[1])
-                    gl_nodes[0].connected_nodes.sort()
-
-                    gl_nodes[1].connected_nodes.append(gl_nodes[0])
-                    gl_nodes[1].connected_nodes.sort()
-
-                    id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
-                    edge = Edge(id, gl_nodes[0], gl_nodes[1], None)
+                    # Draw node in doc
+                    virtual_node.generate_node_point("v-node")
 
                     # Maintain node information
-                    self.edges_in_virtual.append(edge)
+                    self.nodes_in_virtual.append(virtual_node)
 
-                    # Draw edge line in doc
-                    edge.generate_edge_line("v-edge")
+                    """Get virtual Edge"""
+                    # Search edges of virtual graph
+                    adding_virtual_nodes = self.virtual_graph.detect_edge_of_virtual_graph(virtual_node,
+                                                                                           self.edges_in_playground,
+                                                                                           self.edges_in_virtual)
 
-                # Constructing Virtual Graphs
-                self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
-                self.virtual_graph.create_graph()
+                    # Maintain node information
+                    for adding_virtual_node in adding_virtual_nodes:
+                        if adding_virtual_node in self.nodes_in_virtual:
+                            continue
+                        else:
+                            self.nodes_in_virtual.append(adding_virtual_node)
 
-                # Detecting cycles in graph using search method
-                cycles = Search.detect_cycles_in_graph(self.virtual_graph)
-                print("virtual cycles: {0}".format(cycles))
+                    ###################################################################
+                    # Judge whether nodes in virtual have two GL node TODO 処理方法を検討
+                    gl_nodes = []
 
-                if cycles:
-                    # Drawing virtual cycle mesh in doc
-                    cycle = self.virtual_graph.generate_cycle(cycles, self.nodes_in_virtual, "v-cycle")
+                    for v_node in self.nodes_in_virtual:
+                        if v_node.is_on_GL:
+                            gl_nodes.append(v_node)
 
-                # Maintain cycle information
-                self.cycle_in_playground.append(cycle)
+                    if len(gl_nodes) == 2:
+                        # Record the nodes to which each node is connected
+                        if not (gl_nodes[1] in gl_nodes[0].connected_nodes):
+                            gl_nodes[0].connected_nodes.append(gl_nodes[1])
 
-    def reset(self, explode_target_lines):
+                            if not (gl_nodes[0] in gl_nodes[1].connected_nodes):
+                                gl_nodes[1].connected_nodes.append(gl_nodes[0])
+
+                                id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
+                                edge = Edge(id, gl_nodes[0], gl_nodes[1], None)
+
+                                # Maintain node information
+                                if edge in self.edges_in_virtual:
+                                    print("---pass---")
+                                    pass
+                                else:
+                                    self.edges_in_virtual.append(edge)
+
+                                    # Draw edge line in doc
+                                    edge.generate_edge_line("v-edge")
+                    ###################################################################
+
+                    # Constructing Virtual Graphs
+                    self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
+                    self.virtual_graph.create_graph()
+
+                    # Detecting cycles in graph using search method
+                    virtual_cycles = Search.detect_cycles_in_graph(self.virtual_graph)
+                    print("virtual cycles: {0}".format(virtual_cycles))
+
+                    if virtual_cycles:
+                        # Drawing virtual cycle mesh in doc
+                        cycles, delete_cycles = self.virtual_graph.generate_cycle(virtual_cycles, self.nodes_in_virtual,
+                                                                                  "v-cycle")
+
+                        # If a new virtual cycle is detected
+                        if cycles:
+                            # Maintain virtual cycle information
+                            for virtual_cycle in cycles:
+                                self.cycle_in_virtual.append(virtual_cycle)
+
+                        # TODO 古いサイクルを削除する場合が発生する！
+                        if delete_cycles:
+                            for delete_cycle in delete_cycles:
+                                if delete_cycle in self.cycle_in_virtual:
+                                    self.cycle_in_virtual.remove(delete_cycle)
+
         # 生成した部材を記録しておく
         for timber in self.adding_timbers:
             self.timber_list_in_playground.append(timber)
 
+        # 部材の色分けを行う
+        self.virtual_graph.color_code_timbers(self.timber_list_in_playground)
+
+    def reset(self):
+        # # 生成した部材を記録しておく
+        # for timber in self.adding_timbers:
+        #     self.timber_list_in_playground.append(timber)
+
         # reset
+        self.adding_target_line.delete_line_guid()
         self.adding_timber = None
         self.adding_timbers = []
         self.adding_target_line = None
-        rs.DeleteObjects(explode_target_lines)
 
         print("")

@@ -38,7 +38,7 @@ class Timber:
         self.length = float(length)
         self.surface_breps = None
         self.surface = None
-        self.surface_guid = None
+        self.surface_guids = []
         self.path_to_csv = path_to_csv
         self.is_used = False
         self.joint_pts_info = []
@@ -111,8 +111,9 @@ class Timber:
 
         # サーフェス
         for srf in self.surface_breps:
-            self.surface_guid = scriptcontext.doc.Objects.AddBrep(srf)
-            rs.ObjectLayer(self.surface_guid, self.surface_layer)
+            srf_guid = scriptcontext.doc.Objects.AddBrep(srf)
+            self.surface_guids.append(srf_guid)
+            rs.ObjectLayer(srf_guid, self.surface_layer)
 
         # dot text
         self.text_dot_id = scriptcontext.doc.Objects.AddTextDot(self.id, self.center_line.PointAt(0))
@@ -132,7 +133,8 @@ class Timber:
 
         # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
-        scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+        for srf_guid in self.surface_guids:
+            scriptcontext.doc.Objects.Transform(srf_guid, xf, True)  # 表面サーフェス
         if self.text_dot_id:
             scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
@@ -147,7 +149,10 @@ class Timber:
 
         # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
-        scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+
+        for srf_guid in self.surface_guids:
+            scriptcontext.doc.Objects.Transform(srf_guid, xf, True)  # 表面サーフェス
+
         if self.text_dot_id:
             scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
@@ -497,6 +502,18 @@ class Timber:
             self.generate_pattern = 4
         else:
             print("It's a pattern that can't be classified. ")
+
+    def set_having_edge(self, edges):
+        for edge in edges:
+            if edge in self.edges:
+                continue
+            else:
+                self.edges.append(edge)
+
+                # edge.timber = self  # TODO これでOK？
+
+
+
 
     # モデル空間上にあるオブジェクトを3dmファイルに書き出す TODO 指定したオブジェクトのみを書き出すようにする
     @staticmethod

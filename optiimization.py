@@ -73,7 +73,8 @@ class Optimization:
             return target_length, TargetLine(None, new_target_line)
 
     @staticmethod
-    def get_best_timber_in_database(timber_list_in_database, target_length):
+    def get_best_timber_in_database(timber_list_in_database, target_line):
+        target_length = target_line.length
         select_timber = None
         min_diff_length = 10000
         for i, timber in enumerate(timber_list_in_database):
