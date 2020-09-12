@@ -15,14 +15,15 @@ class Node:
         self.x = point.X
         self.y = point.Y
         self.z = point.Z
-        self.connected_nodes = []  # node instances
+        self.connected_nodes = []  # Nodeが接続しているNode instances
 
         self.having_edges = []  # Nodeが保持しているエッジ群
-        self.is_on_GL = is_on_gl  # NodeがGLに説獄しているかどうかを判定するフラグ
+        self.is_on_GL = is_on_gl  # NodeがGLに接続しているかどうかを判定するフラグ
 
         # Variables specific to virtual graph
         self.nodes_of_real_graph = nodes_of_real_graph  # Nodes of Real graph that make up a node of Virtual graph
         self.missing_edges = []  # Missing edges when trying to convert a real graph to a virtual graph
+        self.having_edges_to_virtual_node = []  # virtual node to virtual node which created by 3 real graph node
 
     # Rhino空間上に描画する
     def generate_node_point(self, layer_name):
@@ -61,12 +62,12 @@ class Node:
         for connected_node in temp_connected_nodes:
             self.connected_nodes.append(connected_node[1])
 
-    def judge_node_on_ground(self, nodes_in_playground):
+    def judge_node_on_ground(self):
         gl_nodes = []
 
         for node in self.connected_nodes:
-            if -40 < nodes_in_playground[node.id].z < 40:
-                gl_nodes.append(nodes_in_playground[node.id])
+            if -40 < node.z < 40:
+                gl_nodes.append(node)
 
         if len(gl_nodes) == 2:
             # Record the nodes to which each node is connected
@@ -77,8 +78,19 @@ class Node:
             gl_nodes[1].connected_nodes.sort()
 
             return gl_nodes
-
         else:
             return False
 
+    def set_having_edge(self, edges):
+        for edge in edges:
+            if edge in self.having_edges:
+                continue
+            else:
+                self.having_edges.append(edge)
 
+    def set_having_edges_to_virtual_node(self, edges):
+        for edge in edges:
+            if edge in self.having_edges_to_virtual_node:
+                continue
+            else:
+                self.having_edges_to_virtual_node.append(edge)

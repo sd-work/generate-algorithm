@@ -70,31 +70,35 @@ class Graph:
 
         return edge_to_get
 
-    def detect_edge_of_real_graph(self, num_joint_pts, node1, node2, edges_in_playground, nodes_in_playground,
-                                  joint_pts_nodes=None, timber=None):
+    def detect_edge_of_real_graph(self, num_joint_pts, node1, node2, edges_in_playground, joint_pts_nodes=None,
+                                  timber=None):
 
         if num_joint_pts == 0:
             id = str(node1.id) + "-" + str(node2.id)
             edge = Edge(id, node1, node2, timber)
 
-            # Record the nodes to which each node is connected
-            node1.connected_nodes.append(node2)
-            node2.connected_nodes.append(node1)
-
-            timber.set_having_edge([edge])  # TODO
-
-            edge.timber = timber  # TODO
-
             # Draw edge line in doc
             edge.generate_edge_line("r-edge")
 
-            # Maintain node information
-            edges_in_playground.append(edge)
+            """About New Node"""
+            node1.connected_nodes.append(node2)
+            node2.connected_nodes.append(node1)
 
-            return
+            """About split timber instance"""
+            edge.timber = timber  # TODO parent timber
+            edge.split_timber = timber  # TODO split timber
+
+            """About Timber instance"""
+            # Record the nodes and edges which adding timber has
+            timber.set_nodes([node1, node2])
+            timber.set_having_edge([edge])
+
+            """About playground instance"""
+            edges_in_playground.append(edge)
 
         else:
             delete_old_edges = []
+            temp_split_timbers = []  # 新たに追加するTimberを分割した時のsplit timber instanceを格納しておく
             end_point_nodes = [node1, node2]
 
             if num_joint_pts == 2:
@@ -108,6 +112,7 @@ class Graph:
                 print("edge to get: {0}".format(edge_to_get.id))
 
                 """ Get edge(adding timber node and joint point node) """
+                # 接合数が1つの場合
                 if num_joint_pts == 1:
                     id = str(node1.id) + "-" + str(joint_pt_node.id)
                     edge1 = Edge(id, node1, joint_pt_node, timber)
@@ -115,50 +120,51 @@ class Graph:
                     id = str(node2.id) + "-" + str(joint_pt_node.id)
                     edge2 = Edge(id, node2, joint_pt_node, timber)
 
-                    # Record the nodes to which each node is connected
-                    node1.set_connected_nodes(joint_pt_node)
-                    node2.set_connected_nodes(joint_pt_node)
-
-                    # Record the nodes to which joint point is connected
-                    joint_pt_node.set_connected_nodes([node1, node2, edge_to_get.start_node, edge_to_get.end_node])
-
                     # Draw edge line in doc
                     edge1.generate_edge_line("r-edge")
                     edge2.generate_edge_line("r-edge")
 
+                    """About New Node"""
+                    # Record the nodes to which each node is connected
+                    node1.set_connected_nodes(joint_pt_node)
+                    node2.set_connected_nodes(joint_pt_node)
+
+                    """About joint point node"""
+                    # Record the nodes to which joint point is connected and Record the edges which Node has
+                    joint_pt_node.set_connected_nodes([node1, node2, edge_to_get.start_node, edge_to_get.end_node])
+                    joint_pt_node.set_having_edge([edge1, edge2])
+
+                    """About Timber instance"""
+                    # Record the nodes and edges which adding timber has
+                    timber.set_nodes([node1, node2, joint_pt_node])
+                    timber.set_joint_pt_nodes([joint_pt_node])
                     timber.set_having_edge([edge1, edge2])
 
-                    edge1.timber = timber  # TODO
-                    edge2.timber = timber  # TODO
+                    """About split timber instance"""
+                    # Split the timber at the joint point
+                    split_timbers = timber.split_timber_surface(joint_pt_node.point, timber)
 
+                    # Record the split timber in edge and Record the edges which split timber has
+                    Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
+
+                    """About playground instance"""
                     # Maintain node information
                     edges_in_playground += edge1, edge2
 
+                # 接合数が2つの場合
                 elif num_joint_pts == 2:
                     node_to_get = nodes_to_get[joint_pt_node]
-
-                    id = str(node_to_get.id) + "-" + str(joint_pt_node.id)
-                    edge1 = Edge(id, node_to_get, joint_pt_node, timber)
 
                     if i == 0:
                         joint_pt_node2 = joint_pts_nodes[1]
                     else:
                         joint_pt_node2 = joint_pts_nodes[0]
 
+                    id = str(node_to_get.id) + "-" + str(joint_pt_node.id)
+                    edge1 = Edge(id, node_to_get, joint_pt_node, timber)
+
                     id = str(joint_pt_node.id) + "-" + str(joint_pt_node2.id)
                     edge2 = Edge(id, joint_pt_node, joint_pt_node2, timber)
-
-                    # Record the nodes to which each node is connected
-                    node_to_get.set_connected_nodes(joint_pt_node)
-
-                    # Record the nodes to which joint point is connected
-                    joint_pt_node.set_connected_nodes(
-                        [node_to_get, joint_pt_node2, edge_to_get.start_node, edge_to_get.end_node])
-
-                    timber.set_having_edge([edge1, edge2])
-
-                    edge1.timber = timber  # TODO
-                    edge2.timber = timber  # TODO
 
                     # Draw edge line in doc
                     if i == 0:
@@ -167,12 +173,80 @@ class Graph:
                         edge1.generate_edge_line("r-edge")
                         edge2.generate_edge_line("r-edge")
 
-                    # Maintain node information
-                    if i == 0:
-                        edges_in_playground.append(edge1)
+                    """About New Node"""
+                    node_to_get.set_connected_nodes(joint_pt_node)
 
+                    """About joint point node"""
+                    joint_pt_node.set_connected_nodes(
+                        [node_to_get, joint_pt_node2, edge_to_get.start_node, edge_to_get.end_node])
+
+                    """About Timber instance | joint point node | playground instance"""
+                    if i == 0:
+                        # About Timber instance
+                        timber.set_nodes([node1, node2, joint_pt_node])
+                        timber.set_joint_pt_nodes([joint_pt_node])
+                        timber.set_having_edge([edge1])
+
+                        # About joint point node
+                        joint_pt_node.set_having_edge([edge1])
+
+                        # About playground instance
+                        edges_in_playground.append(edge1)
                     else:
+                        # About Timber instance
+                        timber.set_nodes([joint_pt_node])
+                        timber.joint_pts_nodes.append(joint_pt_node)
+                        timber.set_having_edge([edge1, edge2])
+
+                        # About joint point node
+                        joint_pts_nodes[0].set_having_edge([edge2])
+                        joint_pt_node.set_having_edge([edge1, edge2])
+
+                        # About playground instance
                         edges_in_playground += edge1, edge2
+
+                    """About split timber instance"""
+                    if i == 0:
+                        # Split timber
+                        split_timbers = timber.split_timber_surface(joint_pt_node.point, timber)
+
+                        # 分割したsplit timber instanceを格納しておく
+                        temp_split_timbers += split_timbers
+                    else:
+                        test_pt = joint_pt_node.point
+
+                        rc, u1, v1 = Surface.ClosestPoint(temp_split_timbers[0].surface, test_pt)
+                        rc, u2, v2 = Surface.ClosestPoint(temp_split_timbers[1].surface, test_pt)
+
+                        to_point1 = temp_split_timbers[0].surface.PointAt(u1, v1)
+                        to_point2 = temp_split_timbers[1].surface.PointAt(u2, v2)
+
+                        dis1 = Point3d.DistanceTo(test_pt, Point3d(to_point1[0], to_point1[1], to_point1[2]))
+                        dis2 = Point3d.DistanceTo(test_pt, Point3d(to_point2[0], to_point2[1], to_point2[2]))
+
+                        if dis1 < dis2:
+                            temp_parent_timber = temp_split_timbers[0]
+                        else:
+                            temp_parent_timber = temp_split_timbers[1]
+
+                        # Split timber
+                        split_timbers = timber.split_timber_surface(joint_pt_node.point, temp_parent_timber)
+
+                        # 分割したsplit timber instanceを格納しておく
+                        temp_split_timbers += split_timbers
+
+                        # Delete timber guid form doc
+                        temp_parent_timber.delete_timber_guid()
+
+                        # Remove temp parent timber from instance variable which adding timber has
+                        timber.split_timbers.remove(temp_parent_timber)
+                        temp_split_timbers.remove(temp_parent_timber)
+
+                        # 分割したsplit timber instanceを格納しておく
+                        temp_split_timbers += split_timbers
+
+                    # Record the split timber in edge and Record the edges which split timber has
+                    Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
 
                 """ Get edge(Already generated timber node and joint point node) """
                 already_generated_timber = edge_to_get.timber
@@ -183,22 +257,11 @@ class Graph:
                 id = str(edge_to_get.end_node.id) + "-" + str(joint_pt_node.id)
                 edge2 = Edge(id, edge_to_get.end_node, joint_pt_node, already_generated_timber)
 
-                # Maintain node information
-                edges_in_playground += edge1, edge2
-
-                # Linking Node and Edge information to already generated timber
-                already_generated_timber.nodes.append(joint_pt_node)
-                already_generated_timber.edges.remove(edge_to_get)  # remove edge to get id from edges list
-                already_generated_timber.edges += edge1, edge2
-
-                edge1.timber = already_generated_timber  # TODO
-                edge2.timber = already_generated_timber  # TODO
-
                 # Draw edge line in doc
                 edge1.generate_edge_line("r-edge")
                 edge2.generate_edge_line("r-edge")
 
-                # Record the nodes to which each node is connected
+                """About New Node"""
                 # Start node that an edge has
                 temp_connected_nodes = []
                 if len(edge_to_get.start_node.connected_nodes) == 4:
@@ -212,6 +275,10 @@ class Graph:
 
                     # Set connected nodes information to an edge
                     edge_to_get.start_node.set_connected_nodes(temp_connected_nodes)
+
+                    # Set new having edge information to node instance
+                    edge_to_get.start_node.having_edges.remove(edge_to_get)  # delete old edge from having edge list
+                    edge_to_get.start_node.set_having_edge([edge1])  # set new having edge to node instance
 
                 else:
                     # Set connected nodes information to an edge
@@ -231,12 +298,19 @@ class Graph:
                     # Set connected nodes information to an edge
                     edge_to_get.end_node.set_connected_nodes(temp_connected_nodes)
 
+                    # Set new having edge information to node instance
+                    edge_to_get.end_node.having_edges.remove(edge_to_get)  # delete old edge from having edge list
+                    edge_to_get.end_node.set_having_edge([edge2])  # set new having edge to node instance
                 else:
                     # Set connected nodes information to an edge
                     edge_to_get.end_node.set_connected_nodes(joint_pt_node)
 
+                """About joint point node"""
+                joint_pt_node.set_having_edge([edge1, edge2])
+
+                """About judging on GL"""
                 # Judge whether joint point nodes have two GL node
-                gl_nodes = joint_pt_node.judge_node_on_ground(nodes_in_playground)
+                gl_nodes = joint_pt_node.judge_node_on_ground()
 
                 if gl_nodes:
                     id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
@@ -248,10 +322,41 @@ class Graph:
                     # Draw edge line in doc
                     edge.generate_edge_line("r-edge")
 
-                # delete old edge
+                """About Timber instance"""
+                already_generated_timber.set_nodes([joint_pt_node])
+                already_generated_timber.set_joint_pt_nodes([joint_pt_node])
+
+                # About edge
+                edge1.is_on_virtual_cycle = edge_to_get.is_on_virtual_cycle  # TODO ここでエラーがでてしまう？色分けの時
+                edge2.is_on_virtual_cycle = edge_to_get.is_on_virtual_cycle
+                already_generated_timber.edges.remove(edge_to_get)  # remove edge to get id from edges list
+                already_generated_timber.set_having_edge([edge1, edge2])
+
+                """About playground instance"""
+                edges_in_playground += edge1, edge2
+
+                """About split timber instance"""
+                temp_parent_timber = edge_to_get.split_timber  # TODO ここは正確にはsplit timber instanceを選択する(初回以外)
+                split_timbers = already_generated_timber.split_timber_surface(joint_pt_node.point, temp_parent_timber)
+
+                # Record the split timber in edge and Record the edges which split timber has
+                Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
+
+                # delete old split timber
+                if edge_to_get.split_timber == edge_to_get.timber:
+                    pass
+                else:
+                    # Delete split timber guid from doc
+                    edge_to_get.split_timber.delete_timber_guid()
+
+                    # Remove split timber from instance variable which already generated timber has
+                    already_generated_timber.split_timbers.remove(edge_to_get.split_timber)
+
+                """Delete old edge"""
                 if num_joint_pts == 1:
                     edge_to_get.delete_guid()
                     edges_in_playground.remove(edge_to_get)
+
                 elif num_joint_pts == 2:
                     if i == 0:
                         delete_old_edges.append(edge_to_get)
@@ -262,18 +367,15 @@ class Graph:
                             old_edge.delete_guid()
                             edges_in_playground.remove(old_edge)
 
-            return
-
     def detect_edge_of_virtual_graph(self, virtual_node, edges_in_playground, edges_in_virtual):
         adding_virtual_nodes = []
         missing_edges = []
-
         new_virtual_connected_nodes = []
 
         for real_node in virtual_node.nodes_of_real_graph:
             for r_connected_node in real_node.connected_nodes:
 
-                # If the selected node is the node that is shaping the cycle
+                # If the selected node is the node that is shaping the cycle->接続先のノードがサイクルを構成するノードの時
                 if r_connected_node in virtual_node.nodes_of_real_graph:
 
                     # Get Missing edge
@@ -312,7 +414,7 @@ class Graph:
                         # Draw virtual node in doc
                         new_connected_node.generate_node_point("v-node")
 
-                    # get timber id which a real edge has
+                    # Get timber id which a real edge has
                     if real_node.id < r_connected_node.id:
                         check_edge_id = str(real_node.id) + "-" + str(r_connected_node.id)
                     else:
@@ -326,22 +428,29 @@ class Graph:
                             timber = real_edge.timber
                             break
 
+                    # The Edge consists of virtual node and new connected node
                     id = str(virtual_node.id) + "-" + str(new_connected_node.id)
-                    v_edge = Edge(id, virtual_node, new_connected_node, timber)  # virtual node to new connected node
+                    v_edge = Edge(id, virtual_node, new_connected_node, timber)
 
                     # connecting real edge information to virtual edge
                     v_edge.real_edge = real_edge
                     virtual_node.having_edges.append(v_edge)
 
-                    if is_new_connected_node_virtual_node:  # TODO
+                    # TODO 着目しているエッジがVirtual cycleを構成するエッジの一部である場合->葉ノードへの接続でない場合
+                    if is_new_connected_node_virtual_node:
+                        # v_edge.real_edge.is_on_virtual_cycle = True
+                        virtual_node.set_having_edges_to_virtual_node([v_edge])
+
+                    if is_new_connected_node_virtual_node:
                         new_connected_node.having_edges.append(v_edge)
 
                     # Record the nodes to which each node is connected
                     if not (new_connected_node in virtual_node.connected_nodes):
-                        virtual_node.connected_nodes.append(new_connected_node)  # TODO
+                        virtual_node.connected_nodes.append(new_connected_node)
                     if not (virtual_node in new_connected_node.connected_nodes):
-                        new_connected_node.connected_nodes.append(virtual_node)  # TODO
+                        new_connected_node.connected_nodes.append(virtual_node)
 
+                    # 新たに生成されたvirtual node
                     adding_virtual_nodes.append(new_connected_node)
 
                     # Draw virtual edge line in doc
@@ -378,7 +487,7 @@ class Graph:
                 break
 
         for new_virtual_connected_node in new_virtual_connected_nodes:
-            print("Check node: {0}".format(new_virtual_connected_node.id))
+            # print("Check node: {0}".format(new_virtual_connected_node.id))
 
             for having_edge in new_virtual_connected_node.having_edges:
                 for check_node in new_virtual_connected_nodes:
@@ -390,17 +499,22 @@ class Graph:
                         # delete old edge and connected node information
                         for i, v_connected_node in enumerate(new_virtual_connected_node.connected_nodes):
                             if v_connected_node.id == check_node.id:
-                                print("---Delete---")
+                                # print("---Delete---")
 
-                                new_virtual_connected_node.connected_nodes.pop(i)  # del node
-                                check_node.connected_nodes.remove(new_virtual_connected_node)  # del node
+                                # delete node
+                                new_virtual_connected_node.connected_nodes.pop(i)
+                                check_node.connected_nodes.remove(new_virtual_connected_node)
 
-                                having_edge.delete_guid()  # del edge from  doc
+                                # delete edge from doc
+                                having_edge.delete_guid()
 
+                                # delete a edge from edge list which a node have
                                 new_virtual_connected_node.having_edges.remove(having_edge)
                                 check_node.having_edges.remove(having_edge)
 
-                                edges_in_virtual.remove(having_edge)  # del edge instance from edge list
+                                # delete edge instance from edges_in_virtual
+                                edges_in_virtual.remove(having_edge)
+
                                 break
                         else:
                             continue
@@ -416,6 +530,14 @@ class Graph:
             for edge in edges_in_playground:
                 if missing_edge_id == edge.id:
                     virtual_node.missing_edges.append(edge)
+
+                    # # エッジはVirtual cycleを構成するエッジの一部である場合
+                    # edge.is_on_virtual_cycle = True
+
+                    if edge.timber:
+                        # missing edgeが保持するTimberに剛接合点(virtual_node)情報をリンクさせる
+                        edge.timber.rigid_joints.append(virtual_node)
+
                     break
 
         return adding_virtual_nodes
@@ -454,6 +576,7 @@ class Graph:
             num_node_on_gl = 0
             cycle_nodes_instance = []
 
+            # サイクルを構成するノードinstanceを取得する
             for node_id in cycle:
                 if layer_name == "r-cycle":
                     node_instance = nodes_in_playground[node_id]
@@ -473,7 +596,7 @@ class Graph:
                             if -50 < node_instance.z < 50:
                                 num_node_on_gl += 1
 
-            # GLに接地しているかどうかを判定する
+            # サイクルがGLに接地しているかどうかを判定する
             if num_node_on_gl == 2:
                 is_on_gl = True
             else:
@@ -482,35 +605,48 @@ class Graph:
             # cycle instanceを生成する
             if layer_name == "r-cycle":
                 cycle = Cycle(str(len(self.cycles)), cycle, cycle_nodes_instance, is_on_gl)  # instance
-            else:
-                # TODO ここでメッシュの構成点を考察する
-                if len(cycle_nodes_instance) >= 5:
 
-                    # TODO 以下はバグがでる可能性大
-                    another_cycle_nodes_instance = self.cycles_instance[-1]  # 最後に追加したcycle instanceを取得
-                    temp_nodes_instance = another_cycle_nodes_instance.composition_nodes
-                    temp_nodes_instance.pop(0)
-                    temp_nodes_instance.pop(-1)
-
-                    for node in temp_nodes_instance:
-                        if node in cycle_nodes_instance:
-                            cycle_nodes_instance.remove(node)
-
-                    print(cycle_nodes_instance)
+            elif layer_name == "v-cycle":
 
                 # 新たに生成するサイクルと既に生成されているサイクルの内包関係を調べ、必要がある場合は更新を行う
                 delete_cycles = Cycle.determine_subset_of_two_cycles(cycle_nodes_instance, self.cycles_instance)
+
                 if delete_cycles:
                     for delete_cycle in delete_cycles:
                         if delete_cycle.cycle in self.cycles:
-                            self.cycles.remove(delete_cycle.cycle)
-                            self.cycles_instance.remove(delete_cycle)
+                            self.cycles.remove(delete_cycle.cycle)  # Delete cycle from list
+                            self.cycles_instance.remove(delete_cycle)  # Delete cycle instance from list
                             delete_cycles.append(delete_cycle)
 
-                cycle = Cycle("v-" + str(len(self.cycles)), cycle, cycle_nodes_instance, is_on_gl)  # instance
+                # cycle instance
+                cycle = Cycle("v-" + str(len(self.cycles)), cycle, cycle_nodes_instance, is_on_gl)
+
+                # TODO is_on_virtual_cycleを判定する
+                for virtual_node in cycle.composition_nodes:
+                    # virtual node to virtual nodeはTrue
+                    for having_edge_to_virtual_node in virtual_node.having_edges_to_virtual_node:
+                        having_edge_to_virtual_node.real_edge.is_on_virtual_cycle = True
+
+                    # missing edgeはTrue
+                    for missing_edge in virtual_node.missing_edges:
+                        missing_edge.is_on_virtual_cycle = True
+
+
+
+
+
+
+
+
+
+
 
             # Generate cycle mesh in doc
-            cycle.generate_cycle_mesh(layer_name)
+            if layer_name == "r-cycle":
+                cycle.generate_cycle_mesh(layer_name)
+
+            elif layer_name == "v-cycle":
+                cycle.generate_cycle_polyline(layer_name)
 
             # cycle instanceを保持する
             self.cycles_instance.append(cycle)
@@ -518,68 +654,56 @@ class Graph:
 
         if layer_name == "r-cycle":
             return return_cycles
-        else:
+        elif layer_name == "v-cycle":
             return return_cycles, delete_cycles
 
+    # 部材の色分けを行う(全体の判定)
     def color_code_timbers(self, timber_list_in_playground):
 
         check_timber_list_in_playground = copy.copy(timber_list_in_playground)
 
+        # 1. 全体の判定
         # virtual graph内でサイクルを構成しているノードが保持しているTimberは青色に設定
         for virtual_cycle in self.cycles_instance:
             for virtual_node in virtual_cycle.composition_nodes:
                 for missing_edge in virtual_node.missing_edges:
-                    # Edge is on GL
-                    if missing_edge.timber is None:
+                    if missing_edge.timber is None:  # Edge is on GL
                         pass
                     else:
-                        # サーフェス
-                        for srf_guid in missing_edge.timber.surface_guids:
-                            rs.ObjectColor(srf_guid, [157, 204, 255])  # 青色
+                        # Edgeが保持しているMaster Timberの色を変更する
+                        rs.ObjectColor(missing_edge.timber.surface_guid, [157, 204, 255])  # 青色
+                        missing_edge.timber.status = 2  # 青色
 
-                            # 色分けを行った部材は消去する
-                            if missing_edge.timber in check_timber_list_in_playground:
-                                check_timber_list_in_playground.remove(missing_edge.timber)
+                        # Master Timberが保持しているsplit timberの色を変更する
+                        for split_timber in missing_edge.timber.split_timbers:
+                            rs.ObjectColor(split_timber.surface_guid, [157, 204, 255])  # 青色
+                            split_timber.status = 2  # 青色
 
-        # TODO 黄色の判定
-        #
+                        # TODO virtual nodeを構成しているreal nodeが保持するedgeのsplit timber surfaceの色を変更する
+                        # for real_node in virtual_node.nodes_of_real_graph:
+                        #     print(real_node.having_edges)
+                        #
+                        #     for real_edge in real_node.having_edges:
+                        #         if not real_edge.split_timber:
+                        #             continue
+                        #         print("---test2---")
+                        #         print(real_edge.split_timber.surface_guid)
+                        #         # TODO ここでエラーがでる。紐づけがおかしい？
+                        #         rs.ObjectColor(real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
 
-        # それ以外の部材は赤色に設定
+                        # 色分けを行った部材はリストから消去する
+                        if missing_edge.timber in check_timber_list_in_playground:
+                            check_timber_list_in_playground.remove(missing_edge.timber)
+
+        # 2. 部分の判定
+        # 全体の判定では処理されなかった部材の色分けを行う
         for timber in check_timber_list_in_playground:
-            # サーフェス
-            for srf_guid in timber.surface_guids:
-                rs.ObjectColor(srf_guid, [223, 51, 78])  # 赤色
+            print("timber id: {0}".format(timber.id))
+            timber.color_code_timber()
 
+        # TODO 黄色の判定 -> 固定はされているが、どこか黄色の部分が折れると部分的な崩壊などが起こる
+        # TODO 接続している部材の色が黄色や赤色の場合？
+        # TODO GLに接地しているReal Graph上のサイクルから出発し、そのサイクルが接続しているサイクルが持つTimberは黄色？
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # TODO 赤色の判定 -> 全体で見たときに、赤色の材になるような部材があるかを判定する
+        # TODO

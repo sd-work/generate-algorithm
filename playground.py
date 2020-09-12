@@ -180,11 +180,17 @@ class Playground:
         num_nodes_in_playground = len(self.real_graph.nodes)
 
         for adding_timber in self.adding_timbers:
-            nodes = []
 
             """Get Node in Real graph"""
             node1 = Node(num_nodes_in_playground, adding_timber.center_line.First)
             node2 = Node(num_nodes_in_playground + 1, adding_timber.center_line.Last)
+
+            # Regard GL point node as Joint point node
+            if -50 <= node1.z <= 50:
+                adding_timber.joint_pts_nodes.append(node1)
+
+            if -50 <= node2.z <= 50:
+                adding_timber.joint_pts_nodes.append(node2)
 
             # Draw node in doc
             node1.generate_node_point("r-node")
@@ -192,37 +198,35 @@ class Playground:
 
             # Maintain node information
             self.nodes_in_playground += node1, node2
-            nodes += node1, node2
 
             """Get Edge in Real graph """
+            # If there are not joint point
             if num_joint_pts == 0:
                 joint_pts_nodes = None
+
+            # If there are some joint points
             else:
                 # Get joint point nodes
                 joint_pts_nodes = Graph.create_node_from_joint_pts(num_nodes_in_playground, joint_pts_info)
 
                 # Maintain node information
                 self.nodes_in_playground.extend(joint_pts_nodes)
-                nodes.extend(joint_pts_nodes)
 
-            # Detecting edges real graph
+            # Detecting edges in real graph
             self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_playground,
-                                                      self.nodes_in_playground, joint_pts_nodes, adding_timber)
-
-            # Linking Node and Edge information to adding timber
-            adding_timber.nodes.extend(nodes)  # Node
+                                                      joint_pts_nodes, adding_timber)
 
         # Constructing Real Graphs
         self.real_graph.set_graph(self.nodes_in_playground, self.edges_in_playground)
         self.real_graph.create_graph()
 
-        # Detecting cycles in graph using search method
+        # Detecting cycles in real graph by using search method
         cycles = Search.detect_cycles_in_graph(self.real_graph)
         print("real cycles: {0}".format(cycles))
 
         # If some cycles are detected
         if cycles:
-            # Drawing cycle mesh in doc
+            # Drawing cycle mesh or polyline in doc
             cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
 
             # If a new cycle is detected
@@ -231,7 +235,7 @@ class Playground:
                 for real_cycle in cycles:
                     self.cycle_in_playground.append(real_cycle)
 
-                    """Get virtual Node based on a new cycle"""
+                    """Get virtual Node based on a new real cycle"""
                     virtual_node = Node("v" + str(len(self.cycle_in_playground)), real_cycle.centroid,
                                         real_cycle.composition_nodes,
                                         real_cycle.is_on_GL)
@@ -289,7 +293,7 @@ class Playground:
                     self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
                     self.virtual_graph.create_graph()
 
-                    # Detecting cycles in graph using search method
+                    # Detecting cycles in virtual graph by using search method
                     virtual_cycles = Search.detect_cycles_in_graph(self.virtual_graph)
                     print("virtual cycles: {0}".format(virtual_cycles))
 
@@ -310,17 +314,20 @@ class Playground:
                                 if delete_cycle in self.cycle_in_virtual:
                                     self.cycle_in_virtual.remove(delete_cycle)
 
-        # 生成した部材を記録しておく
+        # 新たに生成した部材を記録しておく
         for timber in self.adding_timbers:
             self.timber_list_in_playground.append(timber)
 
-        # 部材の色分けを行う
+        # 部材の色分けを行う(全体の判定 -> 部分の判定)
         self.virtual_graph.color_code_timbers(self.timber_list_in_playground)
 
     def reset(self):
-        # # 生成した部材を記録しておく
-        # for timber in self.adding_timbers:
-        #     self.timber_list_in_playground.append(timber)
+        # Print the information of adding timber
+        # for timber in self.timber_list_in_playground:
+        #     print("timber{0} has {1} joint points".format(timber.id, len(timber.joint_pts_nodes)))
+        #     print("timber{0} has {1} rigid points".format(timber.id, len(timber.rigid_joints)))
+        #     print("timber{0} has {1} nodes".format(timber.id, [node.point for node in timber.nodes]))
+        #     print("")
 
         # reset
         self.adding_target_line.delete_line_guid()

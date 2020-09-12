@@ -25,25 +25,43 @@ from optiimization import *
 class Timber:
 
     def __init__(self, id, length=None, path_to_csv=None, parent_layer=None):
-        self.id = id
+        self.id = id  # Timber id
+        if length is None:
+            self.length = None
+        else:
+            self.length = float(length)
+        self.path_to_csv = path_to_csv  # Timber情報が格納されたディレクトリまでのパス
+        self.generate_pattern = None  # ???
+        self.is_used = False  # 生成済みかどうかの判定フラグ
+        self.joint_pts_info = []  # 接合点情報
+
+        # Object(RhinoCommon)
+        self.center_line = None  # 中心線
+        self.surface_breps = None  # TimberのB-rep  # TODO これがないとIntersectionコマンドが使えない->Surfaceに統一したい
+        self.surface = None  # Timberのサーフェス
+        self.split_timbers = []  # Timber Surfaceを分割したsplit timber instance群
+
+        # Guid(In doc)
+        self.text_dot_id = None
+        self.center_line_guid = None
+        self.surface_guid = None
+        # self.split_timbers_srf_guid = []  # Timber Surfaceを分割したsplit surface guid群
+
+        # Layer
         self.parent_layer = parent_layer
         self.timber_layer = None
         self.surface_layer = None
         self.text_id_layer = None
         self.center_line_layer = None
-        self.generate_pattern = None
-        self.text_dot_id = None
-        self.center_line = None
-        self.center_line_guid = None
-        self.length = float(length)
-        self.surface_breps = None
-        self.surface = None
-        self.surface_guids = []
-        self.path_to_csv = path_to_csv
-        self.is_used = False
-        self.joint_pts_info = []
-        self.nodes = []
-        self.edges = []
+
+        # Graph
+        self.nodes = []  # Timberが保持するノード情報
+        self.edges = []  # Timberが保持するエッジ情報
+        self.joint_pts_nodes = []  # Timberが保持する接合点におけるノード情報を格納
+        self.is_generated_from_GL = False  # TimberがGLから生成されているかを判定するフラグ
+        self.rigid_joints = []  # Timberが保持する仮想剛接合点(三角形=virtual node)情報
+        self.connected_timbers = []  # Timberが接続している木材情報
+        self.status = 0  # 0/red 1/yellow 2/blue
 
         # temp parameter
         self.section_curves_info = []
@@ -71,6 +89,30 @@ class Timber:
                                      self.section_curves_info[-1][2])
         self.length = start.DistanceTo(end)
 
+    # モデル空間上にあるオブジェクトを3dmファイルに書き出す TODO 指定したオブジェクトのみを書き出すようにする
+    @staticmethod
+    def save_as_rhino_file(name="Default.3dm"):
+        filename = name
+        master_folder = 'G:\\マイドライブ\\2020\\04_Master\\2006_Generation-algorithm\\RhinoModel\\timbers\\'
+        path = os.path.abspath(master_folder + filename + ".3dm")
+        cmd = "_-SaveAs " + chr(34) + path + chr(34)
+        rs.Command(cmd, True)
+
+    def export_csv_file(self, name):
+        master_folder = 'G:\\マイドライブ\\2020\\04_Master\\2006_Generation-algorithm\\RhinoModel\\timbers\\'
+        timber_folder = os.path.join(master_folder, name)
+
+        if os.path.exists(timber_folder):
+            pass
+        else:
+            os.mkdir(timber_folder)  # 各木材のディレクトリを作成
+
+        self.path_to_csv = os.path.join(timber_folder, (name + ".csv"))
+
+        with open(self.path_to_csv, "w") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerows(self.section_curves_info)  # center points
+
     def create_timber_layer(self):
         self.timber_layer = rs.AddLayer(self.id, [0, 0, 0], True, False, self.parent_layer)
 
@@ -95,12 +137,10 @@ class Timber:
             self.section_curves.append(section_curve)
 
         self.center_line = Rhino.Geometry.Polyline(self.center_points)
-        # self.center_line = Rhino.Geometry.PolylineCurve(self.center_points)
 
         self.surface_breps = Rhino.Geometry.Brep.CreateFromLoft(self.section_curves, Point3d.Unset, Point3d.Unset,
                                                                 LoftType.Loose,
                                                                 False)
-
         surfaces = self.surface_breps[0].Surfaces
         self.surface = surfaces[0]
 
@@ -110,10 +150,9 @@ class Timber:
         rs.ObjectLayer(self.center_line_guid, self.center_line_layer)
 
         # サーフェス
-        for srf in self.surface_breps:
-            srf_guid = scriptcontext.doc.Objects.AddBrep(srf)
-            self.surface_guids.append(srf_guid)
-            rs.ObjectLayer(srf_guid, self.surface_layer)
+        srf_guid = scriptcontext.doc.Objects.AddSurface(self.surface)
+        rs.ObjectLayer(srf_guid, self.surface_layer)
+        self.surface_guid = srf_guid
 
         # dot text
         self.text_dot_id = scriptcontext.doc.Objects.AddTextDot(self.id, self.center_line.PointAt(0))
@@ -128,13 +167,14 @@ class Timber:
 
         '''プログラム上の変数をここで更新。ここ重要'''
         self.center_line.Transform(xf)
+        self.surface.Transform(xf)
         for srf in self.surface_breps:
             srf.Transform(xf)
 
         # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
-        for srf_guid in self.surface_guids:
-            scriptcontext.doc.Objects.Transform(srf_guid, xf, True)  # 表面サーフェス
+        scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
+
         if self.text_dot_id:
             scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
@@ -144,15 +184,14 @@ class Timber:
 
         '''プログラム上の変数をここで更新。ここ重要'''
         self.center_line.Transform(xf)  # 中心線
+
+        self.surface.Transform(xf)
         for srf in self.surface_breps:  # 表面サーフェス
             srf.Transform(xf)
 
         # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
-
-        for srf_guid in self.surface_guids:
-            scriptcontext.doc.Objects.Transform(srf_guid, xf, True)  # 表面サーフェス
-
+        scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
         if self.text_dot_id:
             scriptcontext.doc.Objects.Transform(self.text_dot_id, xf, True)  # dot text
 
@@ -163,6 +202,8 @@ class Timber:
 
         '''プログラム上の変数をここで更新'''
         self.center_line.Transform(xf)  # 中心線
+
+        self.surface.Transform(xf)
         for srf in self.surface_breps:  # 表面サーフェス
             srf.Transform(xf)
 
@@ -470,6 +511,7 @@ class Timber:
             # GL判定--> +1
             if test_point.Z == 0:
                 rating += 1
+                self.is_generated_from_GL = True
                 continue
 
             # 既存の部材に接合しているかの判定--> +3
@@ -509,40 +551,310 @@ class Timber:
                 continue
             else:
                 self.edges.append(edge)
-
                 # edge.timber = self  # TODO これでOK？
 
+    def set_nodes(self, nodes):
+        for node in nodes:
+            if node in self.nodes:
+                continue
+            else:
+                self.nodes.append(node)
 
+    def set_joint_pt_nodes(self, joint_pt_nodes):
+        for joint_pt in joint_pt_nodes:
+            if joint_pt in self.joint_pts_nodes:
+                continue
+            else:
+                self.joint_pts_nodes.append(joint_pt)
 
+    def split_timber_surface(self, test_point, timber_instance=None):
+        split_timber_instances = []
 
-    # モデル空間上にあるオブジェクトを3dmファイルに書き出す TODO 指定したオブジェクトのみを書き出すようにする
-    @staticmethod
-    def save_as_rhino_file(name="Default.3dm"):
-        filename = name
-        master_folder = 'G:\\マイドライブ\\2020\\04_Master\\2006_Generation-algorithm\\RhinoModel\\timbers\\'
-        path = os.path.abspath(master_folder + filename + ".3dm")
-        cmd = "_-SaveAs " + chr(34) + path + chr(34)
-        rs.Command(cmd, True)
-
-    def export_csv_file(self, name):
-        master_folder = 'G:\\マイドライブ\\2020\\04_Master\\2006_Generation-algorithm\\RhinoModel\\timbers\\'
-        timber_folder = os.path.join(master_folder, name)
-
-        if os.path.exists(timber_folder):
-            pass
+        # Get closest point on timber surface from test point which is joint point node
+        if timber_instance is None:
+            timber_srf = self.surface
         else:
-            os.mkdir(timber_folder)  # 各木材のディレクトリを作成
+            timber_srf = timber_instance.surface
 
-        self.path_to_csv = os.path.join(timber_folder, (name + ".csv"))
+        # Calculate uv parameter about timber surface
+        rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
 
-        with open(self.path_to_csv, "w") as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerows(self.section_curves_info)  # center points
+        # Split timber surface
+        split_srf_list = timber_srf.Split(0, u_parameter)
 
-        # TODO pandasやnumpyはironpythonの環境では使用できない！
-        # index = ["point" + str(i) for i in range(len(self.section_curves_info))]
-        # columns = ["x", "y", "z"]
-        #
-        # df = pd.DataFrame(data=self.section_curves_info, index=index, columns=columns)
-        #
-        # df.to_csv(path)
+        for split_srf in split_srf_list:
+            # TODO split timber instance
+            split_timber = Timber(timber_instance.id + "-" + str(len(timber_instance.split_timbers)))
+            split_timber.surface = split_srf  # timber surface情報を紐づける
+
+            # 戻り値として格納する
+            split_timber_instances.append(split_timber)
+
+            # Draw split surface in doc TODO ここで描画する？後でまとめて？
+            split_timber.surface_guid = scriptcontext.doc.Objects.AddSurface(split_srf)  # timber surface guid
+
+            # Maintain split surface information to instance variable
+            self.split_timbers.append(split_timber)  # TODO 既にあるものは格納しない？
+            # timber_instance.split_timbers_srf_guid.append(split_timber.surface_guid)
+
+        return split_timber_instances
+
+    def old_split_timber_surface(self):
+        for joint_pt_node in self.joint_pts_nodes:
+            if -50 < joint_pt_node.point.Z < 50:
+                continue
+
+            # Get closest point on timber surface from test point which is joint point node
+            timber_srf = self.surface
+            test_point = joint_pt_node.point
+
+            rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
+
+            # Split timber surface
+            split_srf_list = timber_srf.Split(0, u_parameter)
+
+            for split_srf in split_srf_list:
+                # Draw split surface in doc  TODO Timber instanceに紐づける？
+                split_srf_guid = scriptcontext.doc.Objects.AddSurface(split_srf)
+                # self.split_timbers_srf_guid.append(split_srf_guid)
+
+                # Maintain split surface information to instance variable
+                self.split_timbers.append(split_srf)
+
+                # # split Timber instance -> parent timber id - child(split) timber id
+                # split_timber = Timber(self.id + "-" + str(len(self.split_timbers)))
+                #
+                # split_timber.surface = split_srf  # surface of split timber
+                # split_timber.surface_guids += scriptcontext.doc.Objects.AddSurface(split_srf)  # guid of surface
+
+            # --- old version ---
+            # # Get closest point on timber surface from test point which is joint point node
+            # timber_srf = self.surface  # This is about Timber surface
+            # test_point = node.point  # This is about Node point
+            #
+            # domain_u = timber_srf.Domain(0)  # 高さ方向
+            # domain_v = timber_srf.Domain(1)  # 断面方向
+            #
+            # split_num = 10
+            # if domain_v[0] < 0:
+            #     unit_domain_v = ((domain_v[1] - domain_v[0]) / split_num) * -1
+            # else:
+            #     unit_domain_v = (domain_v[1] - domain_v[0]) / split_num
+            #
+            # rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
+            # closest_pt_on_timber_srf = timber_srf.PointAt(u_parameter, v_parameter)
+            #
+            # # Get closest point on center line from test point which is on timber surface
+            # closest_pt_on_center_line = Polyline.ClosestPoint(self.center_line, closest_pt_on_timber_srf)
+            #
+            # # Generate cutter surface
+            # pt1 = timber_srf.PointAt(u_parameter, unit_domain_v * 0)
+            # pt2 = timber_srf.PointAt(u_parameter, unit_domain_v * 2)
+            #
+            # vec1 = Vector3d(pt1 - closest_pt_on_center_line)
+            # vec2 = Vector3d(pt2 - closest_pt_on_center_line)
+            #
+            # cross_vec = Vector3d.CrossProduct(vec1, vec2)
+            #
+            # # define plane by center point and normal vector
+            # plane = Plane(closest_pt_on_center_line, cross_vec)
+            #
+            # # cutter circle surface
+            # circle = Rhino.Geometry.Circle(plane, 100)
+            # circle = circle.ToNurbsCurve()
+            #
+            # tolerance = scriptcontext.doc.ModelAbsoluteTolerance
+            # cutter_circle_srf = Rhino.Geometry.Brep.CreatePlanarBreps(circle, tolerance)
+            #
+            # # Split timber surface by cutter surface
+            # split_list = timber_srf.Split(0, u_parameter)
+            # print(split_list)
+            #
+            # scriptcontext.doc.Objects.AddSurface(split_list[0])
+            #
+            # # debug
+            # # rc = [scriptcontext.doc.Objects.AddBrep(brep) for brep in cutter_circle_srf]
+
+    def delete_timber_guid(self):
+        if self.text_dot_id:
+            rs.DeleteObject(self.text_dot_id)
+
+        if self.center_line_guid:
+            rs.DeleteObject(self.center_line_guid)
+
+        if self.surface_guid:
+            rs.DeleteObject(self.surface_guid)
+
+        # if self.split_timbers_srf_guid:
+        #     rs.DeleteObjects(self.split_timbers_srf_guid)
+
+    # 部材の構造的な状態を判定し、色分けをする
+    def color_code_timber(self):
+        # debug
+        # for edge in self.edges:
+        #     print(edge.id)
+        # print("")
+        # for node in self.nodes:
+        #     print(node.id)
+        # print("")
+        # for joint_pt_node in self.joint_pts_nodes:
+        #     print(joint_pt_node.id)
+        # print("")
+
+        # 1. TimberがGLから生成されている場合
+        if self.is_generated_from_GL:
+
+            # 1-1. Timberが剛接点を持たない場合 -> 赤色
+            if len(self.rigid_joints) == 0:
+                # Master timber
+                rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
+                self.status = 0  # 赤色
+
+                # Master Timberが接続している隣接エッジの色を考察する
+                for node in self.joint_pts_nodes:
+                    for edge in node.having_edges:
+                        # 接続エッジの色分けが青色の場合
+                        if edge.split_timber.status == 2:  # 青色
+                            if edge.is_on_virtual_cycle:
+                                continue
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが黄色の場合
+                        elif edge.split_timber.status == 1:  # 黄色
+                            rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                            edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが赤色の場合
+                        else:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                            edge.split_timber.status = 0  # 赤色
+
+            # 1-2. Timberが1つ以上の剛接点を持つ場合
+            else:
+                # 剛接合点は持つ + それがGLに接地している場合
+                for rigid_joint in self.rigid_joints:
+                    if rigid_joint.is_on_GL:
+                        # Master timber
+                        rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
+                        self.status = 1  # 黄色
+
+                        # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                        for node in self.joint_pts_nodes:
+                            for edge in node.having_edges:
+                                # 接続エッジの色分けが青色の場合
+                                if edge.split_timber.status == 2:
+                                    if edge.is_on_virtual_cycle:
+                                        continue
+                                    else:
+                                        rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                        edge.split_timber.status = 1  # 黄色
+
+                                # 接続エッジの色分けが黄色の場合
+                                elif edge.split_timber.status == 1:
+                                    rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                    edge.split_timber.status = 1  # 黄色
+
+                                # 接続エッジの色分けが赤色の場合
+                                else:
+                                    if edge.timber == self:
+                                        rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                        edge.split_timber.status = 1  # 黄色
+                                    else:
+                                        rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                                        edge.split_timber.status = 0  # 赤色
+                        return
+
+                # 1-3. 剛接点は持つが、それらのいずれもGLに接地していない場合
+                # Master timber
+                rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
+                self.status = 0  # 赤色
+
+                # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                for node in self.joint_pts_nodes:
+                    for edge in node.having_edges:
+                        # 接続エッジの色分けが青色の場合
+                        if edge.split_timber.status == 2:
+                            if edge.is_on_virtual_cycle:
+                                continue
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが黄色の場合
+                        elif edge.split_timber.status == 1:
+                            if edge.timber == self:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                                edge.split_timber.status = 0  # 赤色
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが赤色の場合
+                        else:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                            edge.split_timber.status = 0  # 赤色
+
+        # 02. TimberがGLから生成されていない場合
+        else:
+            # 2-1. Timberが1つ以上の剛接点を持つ場合 -> 黄色
+            if len(self.rigid_joints) >= 1:
+                # Master timber
+                rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
+                self.status = 1  # 黄色
+
+                # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                for node in self.joint_pts_nodes:
+                    for edge in node.having_edges:
+                        # 接続エッジの色分けが青色の場合
+                        if edge.split_timber.status == 2:
+                            if edge.is_on_virtual_cycle:
+                                continue
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが黄色の場合
+                        elif edge.split_timber.status == 1:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                            edge.split_timber.status = 1  # 黄色
+
+                        # 接続エッジの色分けが赤色の場合
+                        else:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                            edge.split_timber.status = 1  # 黄色
+
+            # 2-2. Timberが剛接点を持たない場合 -> 赤色 or 黄色
+            else:
+                # TODO Timberが剛接点を持たないが、接合点が２つ以上ある場合に黄色になるパターンが存在する？
+                # Timberが保持する接合点が2個以上の場合 -> 黄色
+                if len(self.joint_pts_nodes) >= 2:
+                    pass
+
+                # Timberが保持する接合点が0個か1個の場合 -> 赤色
+                elif len(self.joint_pts_nodes) <= 1:
+                    # Master timber
+                    rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
+                    self.status = 0  # 赤色
+
+                    # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                    for node in self.joint_pts_nodes:
+                        for edge in node.having_edges:
+                            # 接続エッジの色分けが青色の場合
+                            if edge.split_timber.status == 2:  # 青色
+                                if edge.is_on_virtual_cycle:
+                                    continue
+                                else:
+                                    rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                    edge.split_timber.status = 1  # 黄色
+
+                            # 接続エッジの色分けが黄色の場合
+                            elif edge.split_timber.status == 1:  # 黄色
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                            # 接続エッジの色分けが赤色の場合
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                                edge.split_timber.status = 0  # 赤色
