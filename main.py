@@ -7,7 +7,7 @@ from playground import *
 if __name__ == "__main__":
 
     # parameter
-    num_processes = 7
+    num_processes = 10
 
     # playgroundインスタンスを生成
     playground = Playground()

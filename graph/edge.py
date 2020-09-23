@@ -16,7 +16,6 @@ class Edge:
             self.start_node = node2
             self.end_node = node1
             self.id = str(self.start_node.id) + "-" + str(self.end_node.id)
-
         self.edge_line = Line(node1.point, node2.point)
         self.edge_line_guid = None
         self.timber = timber  # Timber instance
@@ -41,6 +40,26 @@ class Edge:
     def delete_guid(self):
         rs.DeleteObject(self.edge_line_guid)
 
+        self.edge_line_guid = None
+
+    @staticmethod
+    def check_edge_in_edge_list(node1, node2, edge_list):
+        if node1.id < node2.id:
+            start_node = node1
+            end_node = node2
+        else:
+            start_node = node2
+            end_node = node1
+
+        check_id = str(start_node.id) + "-" + str(end_node.id)
+
+        for edge in edge_list:
+            if check_id == edge.id:
+                print("Already generated")
+                return True
+
+        return False
+
     @staticmethod
     def record_split_timber_to_edge(edge1, edge2, split_timbers):
         test_pt = edge1.start_node.point
@@ -55,8 +74,8 @@ class Edge:
         dis2 = Point3d.DistanceTo(test_pt, Point3d(to_point2[0], to_point2[1], to_point2[2]))
 
         if dis1 < dis2:
-            print("edge1 id: {0} | split timber: {1}".format(edge1.id, split_timbers[0].id))
-            print("edge2 id: {0} | split timber: {1}".format(edge2.id, split_timbers[1].id))
+            # print("edge1 id: {0} | split timber: {1}".format(edge1.id, split_timbers[0].id))
+            # print("edge2 id: {0} | split timber: {1}".format(edge2.id, split_timbers[1].id))
 
             # TODO Record the split timber in edge
             edge1.split_timber = split_timbers[0]
@@ -69,8 +88,8 @@ class Edge:
             # rs.ObjectColor(edge1.split_timber.surface_guid, [223, 51, 78])  # 赤色
 
         else:
-            print("edge1 id: {0} | split timber: {1}".format(edge1.id, split_timbers[1].id))
-            print("edge2 id: {0} | split timber: {1}".format(edge2.id, split_timbers[0].id))
+            # print("edge1 id: {0} | split timber: {1}".format(edge1.id, split_timbers[1].id))
+            # print("edge2 id: {0} | split timber: {1}".format(edge2.id, split_timbers[0].id))
 
             # TODO Record the split timber in edge
             edge1.split_timber = split_timbers[1]

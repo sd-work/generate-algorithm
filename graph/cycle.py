@@ -84,6 +84,9 @@ class Cycle:
         if self.cycle_mesh_guid:
             rs.DeleteObject(self.cycle_mesh_guid)
 
+        self.cycle_polyline_guid = None
+        self.cycle_mesh_guid = None
+
     @staticmethod
     def determine_subset_of_two_cycles(test_cycle_nodes, generated_cycles):
         delete_cycles = []

@@ -26,6 +26,7 @@ class Timber:
 
     def __init__(self, id, length=None, path_to_csv=None, parent_layer=None):
         self.id = id  # Timber id
+        self.master_timber = None
         if length is None:
             self.length = None
         else:
@@ -45,7 +46,6 @@ class Timber:
         self.text_dot_id = None
         self.center_line_guid = None
         self.surface_guid = None
-        # self.split_timbers_srf_guid = []  # Timber Surfaceを分割したsplit surface guid群
 
         # Layer
         self.parent_layer = parent_layer
@@ -53,6 +53,7 @@ class Timber:
         self.surface_layer = None
         self.text_id_layer = None
         self.center_line_layer = None
+        self.split_timbers_layer = None
 
         # Graph
         self.nodes = []  # Timberが保持するノード情報
@@ -61,7 +62,7 @@ class Timber:
         self.is_generated_from_GL = False  # TimberがGLから生成されているかを判定するフラグ
         self.rigid_joints = []  # Timberが保持する仮想剛接合点(三角形=virtual node)情報
         self.connected_timbers = []  # Timberが接続している木材情報
-        self.status = 0  # 0/red 1/yellow 2/blue
+        self.status = -1  # -1/ init 0/red 1/yellow 2/blue
 
         # temp parameter
         self.section_curves_info = []
@@ -119,6 +120,8 @@ class Timber:
         self.center_line_layer = rs.AddLayer("center line", [0, 0, 0], True, False, self.timber_layer)
         self.surface_layer = rs.AddLayer("surface", [0, 0, 0], True, False, self.timber_layer)
         self.text_id_layer = rs.AddLayer("text id", [0, 0, 0], True, False, self.timber_layer)
+
+        self.split_timbers_layer = rs.AddLayer("split timber", [0, 0, 0], True, False, self.timber_layer)
 
     def generate_timber(self):
         # layerを作成
@@ -182,14 +185,14 @@ class Timber:
     def rotate_timber(self, angle, axis, rotation_center):
         xf = Transform.Rotation(angle, axis, rotation_center)  # 変位
 
-        '''プログラム上の変数をここで更新。ここ重要'''
+        ''' 01. プログラム(Rhino common)上の変数をここで更新。ここ重要'''
         self.center_line.Transform(xf)  # 中心線
 
         self.surface.Transform(xf)
         for srf in self.surface_breps:  # 表面サーフェス
             srf.Transform(xf)
 
-        # モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
+        # 02. モデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         scriptcontext.doc.Objects.Transform(self.center_line_guid, xf, True)  # 中心線
         scriptcontext.doc.Objects.Transform(self.surface_guid, xf, True)  # 表面サーフェス
         if self.text_dot_id:
@@ -582,20 +585,55 @@ class Timber:
         # Split timber surface
         split_srf_list = timber_srf.Split(0, u_parameter)
 
+        # Delete old split timber
+        if timber_instance.master_timber:
+            # Delete split timber guid from doc
+            timber_instance.delete_timber_guid()
+
+            # Remove split timber from instance variable which already generated timber has
+            timber_instance.master_timber.split_timbers.remove(timber_instance)
+
+        # Split timber instance
         for split_srf in split_srf_list:
-            # TODO split timber instance
-            split_timber = Timber(timber_instance.id + "-" + str(len(timber_instance.split_timbers)))
-            split_timber.surface = split_srf  # timber surface情報を紐づける
+            # 引数に渡されたTimber instanceがMaster Timberである場合
+            if timber_instance.master_timber is None:
+                split_timber = Timber(timber_instance.id + "-" + str(len(timber_instance.split_timbers)))
+
+                # split timberにmaster timber instance情報を紐づける
+                split_timber.master_timber = timber_instance
+
+            # 引数に渡されたTimber instanceがSplit Timberである場合
+            else:
+                id = timber_instance.master_timber.id + "-" + str(len(timber_instance.master_timber.split_timbers))
+                split_timber = Timber(id)
+
+                # split timberにmaster timber instance情報を紐づける
+                split_timber.master_timber = self
+
+            # timber surface情報を紐づける
+            split_timber.surface = split_srf
+
+            # 色分けのステータスを引き継ぐ
+            split_timber.status = timber_instance.status
+
+            # Draw split surface in doc
+            split_timber.surface_guid = scriptcontext.doc.Objects.AddSurface(split_srf)  # timber surface guid
+
+            # レイヤー分け
+            temp_layer = rs.AddLayer(split_timber.id, [0, 0, 0], True, False, self.split_timbers_layer)
+            rs.ObjectLayer(split_timber.surface_guid, temp_layer)
 
             # 戻り値として格納する
             split_timber_instances.append(split_timber)
 
-            # Draw split surface in doc TODO ここで描画する？後でまとめて？
-            split_timber.surface_guid = scriptcontext.doc.Objects.AddSurface(split_srf)  # timber surface guid
-
             # Maintain split surface information to instance variable
-            self.split_timbers.append(split_timber)  # TODO 既にあるものは格納しない？
-            # timber_instance.split_timbers_srf_guid.append(split_timber.surface_guid)
+            # 引数に渡されたTimber instanceがMaster Timberである場合
+            if timber_instance.master_timber is None:
+                timber_instance.split_timbers.append(split_timber)
+
+            # 引数に渡されたTimber instanceがSplit Timberである場合
+            else:
+                timber_instance.master_timber.split_timbers.append(split_timber)
 
         return split_timber_instances
 
@@ -685,8 +723,9 @@ class Timber:
         if self.surface_guid:
             rs.DeleteObject(self.surface_guid)
 
-        # if self.split_timbers_srf_guid:
-        #     rs.DeleteObjects(self.split_timbers_srf_guid)
+        self.text_dot_id = None
+        self.center_line_guid = None
+        self.surface_guid = None
 
     # 部材の構造的な状態を判定し、色分けをする
     def color_code_timber(self):
@@ -710,12 +749,19 @@ class Timber:
                 rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
                 self.status = 0  # 赤色
 
+                # TODO ここでいったんsplit timberを全て赤色にする？
+                for split_timber in self.split_timbers:
+                    rs.ObjectColor(split_timber.surface_guid, [223, 51, 78])  # 赤色
+                    split_timber.status = 0  # 赤色
+
                 # Master Timberが接続している隣接エッジの色を考察する
                 for node in self.joint_pts_nodes:
                     for edge in node.having_edges:
                         # 接続エッジの色分けが青色の場合
                         if edge.split_timber.status == 2:  # 青色
                             if edge.is_on_virtual_cycle:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                edge.split_timber.status = 2  # 青色
                                 continue
                             else:
                                 rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -727,6 +773,9 @@ class Timber:
                             edge.split_timber.status = 1  # 黄色
 
                         # 接続エッジの色分けが赤色の場合
+                        elif edge.split_timber.status == 0:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                            edge.split_timber.status = 0  # 赤色
                         else:
                             rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
                             edge.split_timber.status = 0  # 赤色
@@ -740,12 +789,19 @@ class Timber:
                         rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
                         self.status = 1  # 黄色
 
-                        # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                        # TODO ここでいったんsplit timberを全て黄色にする？
+                        for split_timber in self.split_timbers:
+                            rs.ObjectColor(split_timber.surface_guid, [225, 225, 0])  # 黄色
+                            split_timber.status = 1  # 黄色
+
+                        # Master Timberが接続している隣接エッジの色を考察する
                         for node in self.joint_pts_nodes:
                             for edge in node.having_edges:
                                 # 接続エッジの色分けが青色の場合
                                 if edge.split_timber.status == 2:
                                     if edge.is_on_virtual_cycle:
+                                        rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                        edge.split_timber.status = 2  # 青色
                                         continue
                                     else:
                                         rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -771,12 +827,19 @@ class Timber:
                 rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
                 self.status = 0  # 赤色
 
-                # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                # TODO ここでいったんsplit timberを全て赤色にする？
+                for split_timber in self.split_timbers:
+                    rs.ObjectColor(split_timber.surface_guid, [223, 51, 78])  # 赤色
+                    split_timber.status = 0  # 赤色
+
+                # Master Timberが接続している隣接エッジの色を考察する
                 for node in self.joint_pts_nodes:
                     for edge in node.having_edges:
                         # 接続エッジの色分けが青色の場合
                         if edge.split_timber.status == 2:
                             if edge.is_on_virtual_cycle:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                edge.split_timber.status = 2  # 青色
                                 continue
                             else:
                                 rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -792,6 +855,9 @@ class Timber:
                                 edge.split_timber.status = 1  # 黄色
 
                         # 接続エッジの色分けが赤色の場合
+                        elif edge.split_timber.status == 0:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                            edge.split_timber.status = 0  # 赤色
                         else:
                             rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
                             edge.split_timber.status = 0  # 赤色
@@ -804,12 +870,19 @@ class Timber:
                 rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
                 self.status = 1  # 黄色
 
-                # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                # TODO ここでいったんsplit timberを全て黄色にする？
+                for split_timber in self.split_timbers:
+                    rs.ObjectColor(split_timber.surface_guid, [225, 225, 0])  # 黄色
+                    split_timber.status = 1  # 黄色
+
+                # Master Timberが接続している隣接エッジの色を考察する
                 for node in self.joint_pts_nodes:
                     for edge in node.having_edges:
                         # 接続エッジの色分けが青色の場合
                         if edge.split_timber.status == 2:
                             if edge.is_on_virtual_cycle:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                edge.split_timber.status = 2  # 青色
                                 continue
                             else:
                                 rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -821,6 +894,9 @@ class Timber:
                             edge.split_timber.status = 1  # 黄色
 
                         # 接続エッジの色分けが赤色の場合
+                        elif edge.split_timber.status == 0:
+                            rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                            edge.split_timber.status = 0  # 赤色
                         else:
                             rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
                             edge.split_timber.status = 1  # 黄色
@@ -830,20 +906,23 @@ class Timber:
                 # TODO Timberが剛接点を持たないが、接合点が２つ以上ある場合に黄色になるパターンが存在する？
                 # Timberが保持する接合点が2個以上の場合 -> 黄色
                 if len(self.joint_pts_nodes) >= 2:
-                    pass
-
-                # Timberが保持する接合点が0個か1個の場合 -> 赤色
-                elif len(self.joint_pts_nodes) <= 1:
                     # Master timber
-                    rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
-                    self.status = 0  # 赤色
+                    rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
+                    self.status = 1  # 黄色
 
-                    # Master Timberが接続している隣接エッジの色を考察する  # TODO 生成場所によって色が異なる
+                    # TODO ここでいったんsplit timberを全て黄色にする？
+                    for split_timber in self.split_timbers:
+                        rs.ObjectColor(split_timber.surface_guid, [225, 225, 0])  # 黄色
+                        split_timber.status = 1  # 黄色
+
+                    # Master Timberが接続している隣接エッジの色を考察する
                     for node in self.joint_pts_nodes:
                         for edge in node.having_edges:
                             # 接続エッジの色分けが青色の場合
                             if edge.split_timber.status == 2:  # 青色
                                 if edge.is_on_virtual_cycle:
+                                    rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                    edge.split_timber.status = 2  # 青色
                                     continue
                                 else:
                                     rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -855,6 +934,46 @@ class Timber:
                                 edge.split_timber.status = 1  # 黄色
 
                             # 接続エッジの色分けが赤色の場合
+                            elif edge.split_timber.status == 0:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                                edge.split_timber.status = 0  # 赤色
+                            else:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                # Timberが保持する接合点が0個か1個の場合 -> 赤色
+                elif len(self.joint_pts_nodes) <= 1:
+                    # Master timber
+                    rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
+                    self.status = 0  # 赤色
+
+                    # TODO ここでいったんsplit timberを全て赤色にする？
+                    for split_timber in self.split_timbers:
+                        rs.ObjectColor(split_timber.surface_guid, [223, 51, 78])  # 赤色
+                        split_timber.status = 0  # 赤色
+
+                    # Master Timberが接続している隣接エッジの色を考察する
+                    for node in self.joint_pts_nodes:
+                        for edge in node.having_edges:
+                            # 接続エッジの色分けが青色の場合
+                            if edge.split_timber.status == 2:  # 青色
+                                if edge.is_on_virtual_cycle:
+                                    rs.ObjectColor(edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                    edge.split_timber.status = 2  # 青色
+                                    continue
+                                else:
+                                    rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                    edge.split_timber.status = 1  # 黄色
+
+                            # 接続エッジの色分けが黄色の場合
+                            elif edge.split_timber.status == 1:  # 黄色
+                                rs.ObjectColor(edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                edge.split_timber.status = 1  # 黄色
+
+                            # 接続エッジの色分けが赤色の場合
+                            elif edge.split_timber.status == 0:
+                                rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                                edge.split_timber.status = 0  # 赤色
                             else:
                                 rs.ObjectColor(edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
                                 edge.split_timber.status = 0  # 赤色

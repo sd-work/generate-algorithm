@@ -229,7 +229,7 @@ class Playground:
             # Drawing cycle mesh or polyline in doc
             cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
 
-            # If a new cycle is detected
+            # If a new real cycle is detected
             if cycles:
                 # Maintain cycle information
                 for real_cycle in cycles:
@@ -294,7 +294,7 @@ class Playground:
                     self.virtual_graph.create_graph()
 
                     # Detecting cycles in virtual graph by using search method
-                    virtual_cycles = Search.detect_cycles_in_graph(self.virtual_graph)
+                    virtual_cycles = Search.detect_cycles_in_graph(self.virtual_graph, virtual_node)
                     print("virtual cycles: {0}".format(virtual_cycles))
 
                     if virtual_cycles:
@@ -308,7 +308,7 @@ class Playground:
                             for virtual_cycle in cycles:
                                 self.cycle_in_virtual.append(virtual_cycle)
 
-                        # TODO 古いサイクルを削除する場合が発生する！
+                        # 古いサイクルを削除する
                         if delete_cycles:
                             for delete_cycle in delete_cycles:
                                 if delete_cycle in self.cycle_in_virtual:

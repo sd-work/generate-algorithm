@@ -239,7 +239,7 @@ class Graph:
                         temp_parent_timber.delete_timber_guid()
 
                         # Remove temp parent timber from instance variable which adding timber has
-                        timber.split_timbers.remove(temp_parent_timber)
+                        # timber.split_timbers.remove(temp_parent_timber)
                         temp_split_timbers.remove(temp_parent_timber)
 
                         # 分割したsplit timber instanceを格納しておく
@@ -342,20 +342,11 @@ class Graph:
                 # Record the split timber in edge and Record the edges which split timber has
                 Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
 
-                # delete old split timber
-                if edge_to_get.split_timber == edge_to_get.timber:
-                    pass
-                else:
-                    # Delete split timber guid from doc
-                    edge_to_get.split_timber.delete_timber_guid()
-
-                    # Remove split timber from instance variable which already generated timber has
-                    already_generated_timber.split_timbers.remove(edge_to_get.split_timber)
-
                 """Delete old edge"""
                 if num_joint_pts == 1:
                     edge_to_get.delete_guid()
                     edges_in_playground.remove(edge_to_get)
+                    del edge_to_get
 
                 elif num_joint_pts == 2:
                     if i == 0:
@@ -397,19 +388,19 @@ class Graph:
                         if not v_node.nodes_of_real_graph:  # virtual nodeが葉(子ノードを持たないノード)である場合
                             continue
                         else:
-                            # あるvirtual nodeを構成するサイクルノードが接続しているreal nodeが他のvirtual nodeに接続している場合
+                            # virtual nodeを構成するreal nodeが他のvirtual nodeを構成するreal nodeに接続している場合
                             if r_connected_node in v_node.nodes_of_real_graph:
-                                new_connected_node = v_node  # 接続先はVnノード
+                                new_connected_node = v_node  # 接続先は既に生成されているvirtual node
                                 is_new_connected_node_virtual_node = True
 
-                                # TODO 削除に使う
-                                new_virtual_connected_nodes.append(new_connected_node)
-
+                                new_virtual_connected_nodes.append(new_connected_node)  # TODO 削除に使う
                                 break
 
                     # 接続先が葉ノードの場合
                     if not is_new_connected_node_virtual_node:
                         new_connected_node = Node(r_connected_node.id, r_connected_node.point)  # 新たなinstanceとして生成
+
+                        new_virtual_connected_nodes.append(new_connected_node)  # TODO 削除に使う
 
                         # Draw virtual node in doc
                         new_connected_node.generate_node_point("v-node")
@@ -428,21 +419,27 @@ class Graph:
                             timber = real_edge.timber
                             break
 
+                    is_generated = Edge.check_edge_in_edge_list(virtual_node, new_connected_node, edges_in_virtual)
+
+                    if is_generated:
+                        print("debug")
+                        continue
+
                     # The Edge consists of virtual node and new connected node
                     id = str(virtual_node.id) + "-" + str(new_connected_node.id)
-                    v_edge = Edge(id, virtual_node, new_connected_node, timber)
+                    v_edge = Edge(id, virtual_node, new_connected_node, timber)  # 新たにinstance作ってるから
 
                     # connecting real edge information to virtual edge
                     v_edge.real_edge = real_edge
                     virtual_node.having_edges.append(v_edge)
 
-                    # TODO 着目しているエッジがVirtual cycleを構成するエッジの一部である場合->葉ノードへの接続でない場合
+                    # 着目しているエッジがVirtual cycleを構成するエッジの一部である場合->葉ノードへの接続でない場合
                     if is_new_connected_node_virtual_node:
-                        # v_edge.real_edge.is_on_virtual_cycle = True
                         virtual_node.set_having_edges_to_virtual_node([v_edge])
-
-                    if is_new_connected_node_virtual_node:
-                        new_connected_node.having_edges.append(v_edge)
+                        new_connected_node.set_having_edges_to_virtual_node([v_edge])
+                    else:
+                        virtual_node.set_having_edges_to_leaf_node([v_edge])  # virtual node -> 葉ノード
+                        new_connected_node.set_having_edges_to_virtual_node([v_edge])  # 葉ノード -> virtual node
 
                     # Record the nodes to which each node is connected
                     if not (new_connected_node in virtual_node.connected_nodes):
@@ -470,11 +467,24 @@ class Graph:
                             # delete old edge and connected node information
                             for i, v_connected_node in enumerate(new_virtual_connected_node.connected_nodes):
                                 if v_connected_node.id == connected_node.id:
-                                    new_virtual_connected_node.connected_nodes.pop(i)  # del node
+                                    # delete node
+                                    new_virtual_connected_node.connected_nodes.pop(i)
 
-                                    having_edge.delete_guid()  # del edge from  doc
+                                    # delete edge from doc
+                                    having_edge.delete_guid()
+
+                                    # delete a edge from edge list which a node have
                                     new_virtual_connected_node.having_edges.remove(having_edge)
-                                    edges_in_virtual.remove(having_edge)  # del edge instance from edge list
+
+                                    if having_edge in new_virtual_connected_node.having_edges_to_virtual_node:
+                                        new_virtual_connected_node.having_edges_to_virtual_node.remove(having_edge)
+
+                                    if having_edge in new_virtual_connected_node.having_edges_to_leaf_node:
+                                        new_virtual_connected_node.having_edges_to_leaf_node.remove(having_edge)
+
+                                    # delete edge instance from edges_in_virtual
+                                    edges_in_virtual.remove(having_edge)
+
                                     break
                             else:
                                 continue
@@ -488,7 +498,6 @@ class Graph:
 
         for new_virtual_connected_node in new_virtual_connected_nodes:
             # print("Check node: {0}".format(new_virtual_connected_node.id))
-
             for having_edge in new_virtual_connected_node.having_edges:
                 for check_node in new_virtual_connected_nodes:
                     if new_virtual_connected_node == check_node:
@@ -499,8 +508,6 @@ class Graph:
                         # delete old edge and connected node information
                         for i, v_connected_node in enumerate(new_virtual_connected_node.connected_nodes):
                             if v_connected_node.id == check_node.id:
-                                # print("---Delete---")
-
                                 # delete node
                                 new_virtual_connected_node.connected_nodes.pop(i)
                                 check_node.connected_nodes.remove(new_virtual_connected_node)
@@ -510,11 +517,19 @@ class Graph:
 
                                 # delete a edge from edge list which a node have
                                 new_virtual_connected_node.having_edges.remove(having_edge)
-                                check_node.having_edges.remove(having_edge)
+                                if having_edge in check_node.having_edges:
+                                    check_node.having_edges.remove(having_edge)
+
+                                if having_edge in new_virtual_connected_node.having_edges_to_virtual_node:
+                                    new_virtual_connected_node.having_edges_to_virtual_node.remove(having_edge)
+                                    check_node.having_edges_to_virtual_node.remove(having_edge)
+
+                                if having_edge in new_virtual_connected_node.having_edges_to_leaf_node:
+                                    new_virtual_connected_node.having_edges_to_leaf_node.remove(having_edge)
+                                    check_node.having_edges_to_leaf_node.remove(having_edge)  # TODO
 
                                 # delete edge instance from edges_in_virtual
                                 edges_in_virtual.remove(having_edge)
-
                                 break
                         else:
                             continue
@@ -567,6 +582,7 @@ class Graph:
         delete_cycles = []
 
         for index, cycle in enumerate(cycles):
+            # 既に同じサイクルを検出し、情報を保持している場合
             if cycle in self.cycles:
                 continue
 
@@ -631,16 +647,6 @@ class Graph:
                     for missing_edge in virtual_node.missing_edges:
                         missing_edge.is_on_virtual_cycle = True
 
-
-
-
-
-
-
-
-
-
-
             # Generate cycle mesh in doc
             if layer_name == "r-cycle":
                 cycle.generate_cycle_mesh(layer_name)
@@ -666,30 +672,30 @@ class Graph:
         # virtual graph内でサイクルを構成しているノードが保持しているTimberは青色に設定
         for virtual_cycle in self.cycles_instance:
             for virtual_node in virtual_cycle.composition_nodes:
-                for missing_edge in virtual_node.missing_edges:
+                for missing_edge in virtual_node.missing_edges:  # TODO ここで何回も同じ処理している
                     if missing_edge.timber is None:  # Edge is on GL
-                        pass
+                        continue
                     else:
-                        # Edgeが保持しているMaster Timberの色を変更する
+                        # 1. Edgeが保持しているMaster Timberの色を変更する
                         rs.ObjectColor(missing_edge.timber.surface_guid, [157, 204, 255])  # 青色
                         missing_edge.timber.status = 2  # 青色
 
-                        # Master Timberが保持しているsplit timberの色を変更する
-                        for split_timber in missing_edge.timber.split_timbers:
-                            rs.ObjectColor(split_timber.surface_guid, [157, 204, 255])  # 青色
-                            split_timber.status = 2  # 青色
+                        # 2. Master Timberが保持しているsplit timberの色を変更する
+                        # 2-1. 三角形を構成しているエッジを構成しているsplit timber
+                        rs.ObjectColor(missing_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                        missing_edge.split_timber.status = 2  # 青色
 
-                        # TODO virtual nodeを構成しているreal nodeが保持するedgeのsplit timber surfaceの色を変更する
-                        # for real_node in virtual_node.nodes_of_real_graph:
-                        #     print(real_node.having_edges)
-                        #
-                        #     for real_edge in real_node.having_edges:
-                        #         if not real_edge.split_timber:
-                        #             continue
-                        #         print("---test2---")
-                        #         print(real_edge.split_timber.surface_guid)
-                        #         # TODO ここでエラーがでる。紐づけがおかしい？
-                        #         rs.ObjectColor(real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                        # 2-2. 三角形間に結ばれるエッジを構成しているsplit timber
+                        for v_edge in virtual_node.having_edges_to_virtual_node:
+                            if v_edge.real_edge.split_timber.surface_guid:
+                                rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                v_edge.real_edge.split_timber.status = 2  # 青色
+
+                        # 3. 端部は黄色に変更
+                        for v_edge in virtual_node.having_edges_to_leaf_node:
+                            if v_edge.real_edge.split_timber.surface_guid:
+                                rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                                v_edge.real_edge.split_timber.status = 1  # 黄色
 
                         # 色分けを行った部材はリストから消去する
                         if missing_edge.timber in check_timber_list_in_playground:
@@ -698,7 +704,6 @@ class Graph:
         # 2. 部分の判定
         # 全体の判定では処理されなかった部材の色分けを行う
         for timber in check_timber_list_in_playground:
-            print("timber id: {0}".format(timber.id))
             timber.color_code_timber()
 
         # TODO 黄色の判定 -> 固定はされているが、どこか黄色の部分が折れると部分的な崩壊などが起こる

@@ -40,6 +40,8 @@ class TargetLine:
     def delete_line_guid(self):
         rs.DeleteObject(self.guid)
 
+        self.guid = None
+
     @staticmethod
     def get_target_line():
         # ターゲット曲線の元になる基準線を生成する

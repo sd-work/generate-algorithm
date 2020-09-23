@@ -13,7 +13,7 @@ class Search:
     num_graph_nodes = 0  # グラフが持つノードの数
 
     @staticmethod
-    def detect_cycles_in_graph(graph):
+    def detect_cycles_in_graph(graph, start_node=None):
         Search.pre_order = [False for _ in range(len(graph.contiguous_list))]
         Search.post_order = [False for _ in range(len(graph.contiguous_list))]
 
@@ -26,6 +26,11 @@ class Search:
         Search.num_graph_nodes = len(graph_contiguous_list)
 
         start_node_id = graph.nodes[0].id
+        print("--start node id : {0}".format(start_node_id))
+
+        if start_node:
+            start_node_id = start_node.id
+            print("-start node id : {0}".format(start_node_id))
 
         # DFS
         Search.dfs_detect_cycles_in_graph(graph_contiguous_list, start_node_id, -1)

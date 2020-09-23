@@ -24,6 +24,7 @@ class Node:
         self.nodes_of_real_graph = nodes_of_real_graph  # Nodes of Real graph that make up a node of Virtual graph
         self.missing_edges = []  # Missing edges when trying to convert a real graph to a virtual graph
         self.having_edges_to_virtual_node = []  # virtual node to virtual node which created by 3 real graph node
+        self.having_edges_to_leaf_node = []  # virtual node to leaf node
 
     # Rhino空間上に描画する
     def generate_node_point(self, layer_name):
@@ -94,3 +95,10 @@ class Node:
                 continue
             else:
                 self.having_edges_to_virtual_node.append(edge)
+
+    def set_having_edges_to_leaf_node(self, edges):
+        for edge in edges:
+            if edge in self.having_edges_to_leaf_node:
+                continue
+            else:
+                self.having_edges_to_leaf_node.append(edge)
