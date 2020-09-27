@@ -26,11 +26,11 @@ class Search:
         Search.num_graph_nodes = len(graph_contiguous_list)
 
         start_node_id = graph.nodes[0].id
-        print("--start node id : {0}".format(start_node_id))
+        # print("--start node id : {0}".format(start_node_id))
 
         if start_node:
             start_node_id = start_node.id
-            print("-start node id : {0}".format(start_node_id))
+            # print("-start node id : {0}".format(start_node_id))
 
         # DFS
         Search.dfs_detect_cycles_in_graph(graph_contiguous_list, start_node_id, -1)
@@ -41,7 +41,7 @@ class Search:
             for history in Search.history_list:
                 cycle = []
 
-                print("History: {0}".format(history))
+                # print("History: {0}".format(history))
 
                 flag_node_id = history[0]
                 history.pop(0)
@@ -125,6 +125,89 @@ class Search:
             Search.history.pop()
 
         Search.post_order[list_index] = True  # 帰りがけ順
+
+    @staticmethod
+    def search_virtual_cycle(some_node_history_list):
+        new_virtual_cycles = []
+
+        # サイクルを検出しにいく
+        break_flag = False
+
+        while True:
+            count = 0
+            temp_append_list = []
+
+            for node_history_list in some_node_history_list:
+                for node_history in node_history_list:
+                    # ノードの履歴を保持するリスト長が2以下の場合
+                    if 0 <= len(node_history) <= 2:
+                        break_flag = True
+                        continue
+
+                    base_node_history = copy.copy(node_history)
+                    current_virtual_node = node_history[-1]  # 最後に追加されたVirtual nodeに着目する
+                    previous_virtual_node = node_history[-2]  # 着目しているVirtual nodeの前に追加されたVirtual Node
+
+                    # print("current node: {0}".format(current_virtual_node.id))
+                    # print("previous node: {0}".format(previous_virtual_node.id))
+                    # print("base history: {0}".format(base_node_history))
+
+                    flag = False
+                    # 着目しているVirtual nodeが接続している他のVirtual nodeを探索しにいく
+                    for node in current_virtual_node.connected_nodes:
+                        # 探索先が葉ノードである場合
+                        if not node.missing_edges:
+                            break_flag = True
+                            continue
+
+                        # 探索先がPrevious virtual nodeである場合
+                        if node == previous_virtual_node:
+                            break_flag = True
+                            continue
+
+                        # 探索先が着目しているノードである場合
+                        if node == current_virtual_node:
+                            break_flag = True
+                            continue
+
+                        # もしここでnode history list内に既に存在しているノードが追加される場合、
+                        # 始点と終点が一致することでになるので、それはサイクルであるとみなすことができる
+                        # ※ただし、検出されるノードは履歴の最初のノードに限る
+                        if node == node_history[0]:
+                            # TODO ここで既に検出されたVirtual cycleリストとの比較を行う
+
+                            # 探索先のVirtual nodeをリストに追加する TODO 一度に２個以上のサイクルが検出される場合
+                            if flag is False:
+                                find_cycle = [node.id for node in node_history]
+                                return [find_cycle]
+
+                            else:
+                                find_cycle = [node.id for node in base_node_history]
+                                return [find_cycle]
+
+                        else:
+                            # 隣接ノードの数によって履歴リストが分岐する
+                            if flag is False:
+                                node_history.append(node)
+
+                                flag = True
+                            else:
+                                temp_node_history_list = copy.copy(base_node_history)
+                                temp_node_history_list.append(node)
+
+                                # 新たな履歴として一次的にリストにAppendする TODO ここで一次的にリストに追加する
+                                temp_append_list += [node_history_list, temp_node_history_list]
+
+                            break_flag = False
+                            count += 1
+
+            # 新たな履歴としてリストにAppendする
+            for append_info in temp_append_list:
+                append_info[0].append(append_info[1])
+
+            # while loopから抜ける
+            if break_flag and (count == 0):
+                return []
 
     @staticmethod
     def reset():

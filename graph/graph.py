@@ -20,6 +20,9 @@ class Graph:
         self.cycles = []
         self.cycles_instance = []
 
+        self.virtual_node_history = []  # 次の新しいvirtual cycleを検出するまでのvirtual nodeを保持しておく
+        self.virtual_edge_history = []  # 次の新しいvirtual cycleを検出するまでのvirtual edgeを保持しておく
+
     def set_graph(self, nodes, edges):
         self.nodes = nodes
         self.edges = edges
@@ -38,7 +41,7 @@ class Graph:
             for r_connected_node in node:
                 temp.append(r_connected_node.id)
             temp_contiguous_list.append(temp)
-        print("contiguous_list: {0}".format(temp_contiguous_list))
+        # print("contiguous_list: {0}".format(temp_contiguous_list))
 
     @staticmethod
     def create_node_from_joint_pts(num_nodes_in_playground, joint_pts_info):
@@ -419,11 +422,11 @@ class Graph:
                             timber = real_edge.timber
                             break
 
-                    is_generated = Edge.check_edge_in_edge_list(virtual_node, new_connected_node, edges_in_virtual)
-
-                    if is_generated:
-                        print("debug")
-                        continue
+                    # is_generated = Edge.check_edge_in_edge_list(virtual_node, new_connected_node, edges_in_virtual)
+                    #
+                    # if is_generated:
+                    #     print("debug")
+                    #     continue
 
                     # The Edge consists of virtual node and new connected node
                     id = str(virtual_node.id) + "-" + str(new_connected_node.id)
@@ -582,7 +585,7 @@ class Graph:
         delete_cycles = []
 
         for index, cycle in enumerate(cycles):
-            # 既に同じサイクルを検出し、情報を保持している場合
+            # 既に同じサイクルを検出し、情報を保持している場合 -> TODO リストの順番が同じ＋要素数も同じである場合は判定される
             if cycle in self.cycles:
                 continue
 
@@ -623,13 +626,15 @@ class Graph:
                 cycle = Cycle(str(len(self.cycles)), cycle, cycle_nodes_instance, is_on_gl)  # instance
 
             elif layer_name == "v-cycle":
-
                 # 新たに生成するサイクルと既に生成されているサイクルの内包関係を調べ、必要がある場合は更新を行う
                 delete_cycles = Cycle.determine_subset_of_two_cycles(cycle_nodes_instance, self.cycles_instance)
 
                 if delete_cycles:
                     for delete_cycle in delete_cycles:
                         if delete_cycle.cycle in self.cycles:
+                            print("---Delete cycle---")
+                            print(delete_cycle.cycle)
+
                             self.cycles.remove(delete_cycle.cycle)  # Delete cycle from list
                             self.cycles_instance.remove(delete_cycle)  # Delete cycle instance from list
                             delete_cycles.append(delete_cycle)

@@ -227,12 +227,13 @@ class Playground:
         # If some cycles are detected
         if cycles:
             # Drawing cycle mesh or polyline in doc
-            cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
+            new_cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
 
             # If a new real cycle is detected
-            if cycles:
+            if new_cycles:
+
                 # Maintain cycle information
-                for real_cycle in cycles:
+                for real_cycle in new_cycles:
                     self.cycle_in_playground.append(real_cycle)
 
                     """Get virtual Node based on a new real cycle"""
@@ -293,26 +294,75 @@ class Playground:
                     self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
                     self.virtual_graph.create_graph()
 
+                    # Append Virtual Node information
+                    # 1. ノードを保持する履歴リストが空である場合
+                    if not self.virtual_graph.virtual_node_history:
+                        if virtual_node.having_edges_to_virtual_node:
+                            for edge in virtual_node.having_edges_to_virtual_node:
+                                some_history_list = []
+                                history_list = []
+
+                                if edge.start_node is virtual_node:
+                                    previous_virtual_node = edge.end_node
+                                else:
+                                    previous_virtual_node = edge.start_node
+
+                                history_list += previous_virtual_node, virtual_node
+                                some_history_list.append(history_list)
+
+                                # 各履歴を保持しておくリストに追加する
+                                self.virtual_graph.virtual_node_history.append(some_history_list)
+                        else:
+                            some_history_list = []
+                            history_list = [virtual_node]
+
+                            some_history_list.append(history_list)
+
+                            # 各履歴を保持しておくリストに追加する
+                            self.virtual_graph.virtual_node_history.append(some_history_list)
+
+                    # 2. 何らかのノード情報を履歴リストが既に持っている場合
+                    else:
+                        for node_history_list in self.virtual_graph.virtual_node_history:
+                            for node_history in node_history_list:
+                                node_history.append(virtual_node)
+
+                    # debug
+                    for node_history_list in self.virtual_graph.virtual_node_history:
+                        for node_history in node_history_list:
+                            print("---")
+                            for node in node_history:
+                                print("Node history: {0}".format(node.id))
+
                     # Detecting cycles in virtual graph by using search method
-                    virtual_cycles = Search.detect_cycles_in_graph(self.virtual_graph, virtual_node)
-                    print("virtual cycles: {0}".format(virtual_cycles))
+                    if self.virtual_graph.virtual_node_history:
+                        find_cycles = Search.search_virtual_cycle(self.virtual_graph.virtual_node_history)
 
-                    if virtual_cycles:
-                        # Drawing virtual cycle mesh in doc
-                        cycles, delete_cycles = self.virtual_graph.generate_cycle(virtual_cycles, self.nodes_in_virtual,
-                                                                                  "v-cycle")
+                        if find_cycles:
+                            print("---Find new cycle---")
+                            print(find_cycles)
 
-                        # If a new virtual cycle is detected
-                        if cycles:
-                            # Maintain virtual cycle information
-                            for virtual_cycle in cycles:
-                                self.cycle_in_virtual.append(virtual_cycle)
+                            # Drawing virtual cycle mesh in doc
+                            new_cycles, delete_cycles = self.virtual_graph.generate_cycle(find_cycles,
+                                                                                          self.nodes_in_virtual,
+                                                                                          "v-cycle")
 
-                        # 古いサイクルを削除する
-                        if delete_cycles:
-                            for delete_cycle in delete_cycles:
-                                if delete_cycle in self.cycle_in_virtual:
-                                    self.cycle_in_virtual.remove(delete_cycle)
+                            # 新しいvirtual cycle が検出された場合
+                            if new_cycles:
+                                # Maintain virtual cycle information
+                                for virtual_cycle in new_cycles:
+                                    self.cycle_in_virtual.append(virtual_cycle)
+
+                                # 変数をリセットする
+                                self.virtual_graph.virtual_node_history = []
+
+                            # 古いサイクルがある場合、削除する
+                            if delete_cycles:
+                                for delete_cycle in delete_cycles:
+                                    if delete_cycle in self.cycle_in_virtual:
+                                        self.cycle_in_virtual.remove(delete_cycle)
+
+                        print("virtual cycles: {0}".format(self.virtual_graph.cycles))
 
         # 新たに生成した部材を記録しておく
         for timber in self.adding_timbers:
