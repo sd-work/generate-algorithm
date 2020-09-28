@@ -602,7 +602,7 @@ class Graph:
                     cycle_nodes_instance.append(node_instance)
 
                     # judge node on the GL
-                    if -50 < node_instance.z < 50:
+                    if -60 < node_instance.z < 60:
                         num_node_on_gl += 1
 
                 elif layer_name == "v-cycle":
@@ -612,7 +612,7 @@ class Graph:
                             cycle_nodes_instance.append(node_instance)
 
                             # judge node on the GL
-                            if -50 < node_instance.z < 50:
+                            if -60 < node_instance.z < 60:
                                 num_node_on_gl += 1
 
             # サイクルがGLに接地しているかどうかを判定する
@@ -646,7 +646,8 @@ class Graph:
                 for virtual_node in cycle.composition_nodes:
                     # virtual node to virtual nodeはTrue
                     for having_edge_to_virtual_node in virtual_node.having_edges_to_virtual_node:
-                        having_edge_to_virtual_node.real_edge.is_on_virtual_cycle = True
+                        if having_edge_to_virtual_node.real_edge:
+                            having_edge_to_virtual_node.real_edge.is_on_virtual_cycle = True
 
                     # missing edgeはTrue
                     for missing_edge in virtual_node.missing_edges:
@@ -692,9 +693,10 @@ class Graph:
 
                         # 2-2. 三角形間に結ばれるエッジを構成しているsplit timber
                         for v_edge in virtual_node.having_edges_to_virtual_node:
-                            if v_edge.real_edge.split_timber.surface_guid:
-                                rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
-                                v_edge.real_edge.split_timber.status = 2  # 青色
+                            if v_edge.real_edge:
+                                if v_edge.real_edge.split_timber.surface_guid:
+                                    rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                                    v_edge.real_edge.split_timber.status = 2  # 青色
 
                         # 3. 端部は黄色に変更
                         for v_edge in virtual_node.having_edges_to_leaf_node:

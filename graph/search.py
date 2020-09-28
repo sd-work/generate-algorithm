@@ -170,40 +170,53 @@ class Search:
                             break_flag = True
                             continue
 
+                        # print("Node: {0}".format(node.id))
+
                         # もしここでnode history list内に既に存在しているノードが追加される場合、
                         # 始点と終点が一致することでになるので、それはサイクルであるとみなすことができる
                         # ※ただし、検出されるノードは履歴の最初のノードに限る
                         if node == node_history[0]:
                             # TODO ここで既に検出されたVirtual cycleリストとの比較を行う
 
-                            # 探索先のVirtual nodeをリストに追加する TODO 一度に２個以上のサイクルが検出される場合
+                            # 探索先のVirtual nodeをリストに追加する
                             if flag is False:
                                 find_cycle = [node.id for node in node_history]
-                                return [find_cycle]
+                                new_virtual_cycles.append(find_cycle)
 
                             else:
                                 find_cycle = [node.id for node in base_node_history]
-                                return [find_cycle]
+                                new_virtual_cycles.append(find_cycle)
 
                         else:
+                            # 探索先がスタートノード以外の訪問済みノードに訪れた場合
+                            if node in node_history:
+                                continue
+
                             # 隣接ノードの数によって履歴リストが分岐する
                             if flag is False:
                                 node_history.append(node)
 
                                 flag = True
                             else:
-                                temp_node_history_list = copy.copy(base_node_history)
-                                temp_node_history_list.append(node)
+                                temp_node_history = copy.copy(base_node_history)
+                                temp_node_history.append(node)
 
-                                # 新たな履歴として一次的にリストにAppendする TODO ここで一次的にリストに追加する
-                                temp_append_list += [node_history_list, temp_node_history_list]
+                                # 新たな履歴として一次的にリストにAppendする
+                                temp_append_list += node_history_list, temp_node_history
 
                             break_flag = False
                             count += 1
 
+            # 戻り値がある場合は、ここで返す
+            if new_virtual_cycles:
+                return new_virtual_cycles
+
             # 新たな履歴としてリストにAppendする
-            for append_info in temp_append_list:
-                append_info[0].append(append_info[1])
+            for i in range(len(temp_append_list)):
+                if i % 2 == 0:
+                    temp_append_list[i].append(temp_append_list[i+1])
+                else:
+                    continue
 
             # while loopから抜ける
             if break_flag and (count == 0):

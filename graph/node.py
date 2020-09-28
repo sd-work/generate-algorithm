@@ -15,6 +15,7 @@ class Node:
         self.x = point.X
         self.y = point.Y
         self.z = point.Z
+        self.coordinate_on_GL = [self.x, self.y, 0]  # Nodeの点を地面に投影した点
         self.connected_nodes = []  # Nodeが接続しているNode instances
 
         self.having_edges = []  # Nodeが保持しているエッジ群
@@ -67,7 +68,7 @@ class Node:
         gl_nodes = []
 
         for node in self.connected_nodes:
-            if -40 < node.z < 40:
+            if -60 < node.z < 60:
                 gl_nodes.append(node)
 
         if len(gl_nodes) == 2:

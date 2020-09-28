@@ -19,6 +19,8 @@ from graph.node import Node
 from graph.edge import Edge
 from graph.search import Search
 
+from delaunay.delaunay import delaunay_triangulation
+
 num_joint_pts = 0
 joint_pts_info = []
 
@@ -260,22 +262,27 @@ class Playground:
                         else:
                             self.nodes_in_virtual.append(adding_virtual_node)
 
-                    ###################################################################
-                    # Judge whether nodes in virtual have two GL node TODO 処理方法を検討
+                    # Judge whether nodes in virtual have two GL node
+                    # ドロネー分割を用いて隣接関係を判定
                     gl_nodes = []
 
+                    # ここで取得したノードがドロネー分割時の母点に置き換わる
                     for v_node in self.nodes_in_virtual:
                         if v_node.is_on_GL:
                             gl_nodes.append(v_node)
 
-                    if len(gl_nodes) == 2:
+                    if len(gl_nodes) < 2:
+                        pass
+
+                    elif len(gl_nodes) == 2:
                         # Record the nodes to which each node is connected
                         if not (gl_nodes[1] in gl_nodes[0].connected_nodes):
-                            gl_nodes[0].connected_nodes.append(gl_nodes[1])
+                            gl_nodes[0].connected_nodes.append(gl_nodes[1])  # about Node
 
                             if not (gl_nodes[0] in gl_nodes[1].connected_nodes):
-                                gl_nodes[1].connected_nodes.append(gl_nodes[0])
+                                gl_nodes[1].connected_nodes.append(gl_nodes[0])  # about Node
 
+                                # Edge Instance
                                 id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
                                 edge = Edge(id, gl_nodes[0], gl_nodes[1], None)
 
@@ -288,16 +295,35 @@ class Playground:
 
                                     # Draw edge line in doc
                                     edge.generate_edge_line("v-edge")
-                    ###################################################################
+                    else:
+                        # ドロネー分割
+                        new_edges = delaunay_triangulation(gl_nodes)
+
+                        # Maintain node information
+                        for edge in new_edges:
+                            if edge in self.edges_in_virtual:
+                                print("---pass---")
+                                pass
+                            else:
+                                self.edges_in_virtual.append(edge)
+
+                                # Draw edge line in doc
+                                edge.generate_edge_line("v-edge")
 
                     # Constructing Virtual Graphs
                     self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
                     self.virtual_graph.create_graph()
 
                     # Append Virtual Node information
+                    # TODO 2. ループができるまで追加してきた材を履歴にとる場合は大丈夫だが、複数の子どもが同時に生成する場合や
+                    # TODO 2. ループを完成させないで、違う場所から新たに生成を始めるなどの時は複数の履歴を持っておく必要がある
                     # 1. ノードを保持する履歴リストが空である場合
+                    # TODO 1. 黄色エッジからの接合ではなく、青色エッジ上に新たにReal Cycleが出来た場合、
+                    # TODO 1. 現状だと、サイクルの判定ができていないアルゴリズムになっているので変更する必要あり
                     if not self.virtual_graph.virtual_node_history:
                         if virtual_node.having_edges_to_virtual_node:
+                            # TODO 持っているエッジの数で場合分け？ 1個->黄色から生成 | 2個->青色から生成
+
                             for edge in virtual_node.having_edges_to_virtual_node:
                                 some_history_list = []
                                 history_list = []
