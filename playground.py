@@ -20,6 +20,7 @@ from graph.edge import Edge
 from graph.search import Search
 
 from delaunay.delaunay import delaunay_triangulation
+from delaunay.delaunay import get_adjacent_relationships
 
 num_joint_pts = 0
 joint_pts_info = []
@@ -43,6 +44,7 @@ class Playground:
         self.nodes_in_virtual = []  # virtual graphに存在するノード群
         self.edges_in_virtual = []  # virtual graphに存在するエッジ群
         self.cycle_in_virtual = []  # virtual graphに存在するサイクル群
+        self.triangles_on_gl = []  # Virtual graphに存在する三角形群
 
         self.adding_timber = None
         self.adding_timbers = []
@@ -262,8 +264,7 @@ class Playground:
                         else:
                             self.nodes_in_virtual.append(adding_virtual_node)
 
-                    # Judge whether nodes in virtual have two GL node
-                    # ドロネー分割を用いて隣接関係を判定
+                    """Judge whether nodes in virtual have two GL node"""
                     gl_nodes = []
 
                     # ここで取得したノードがドロネー分割時の母点に置き換わる
@@ -288,27 +289,33 @@ class Playground:
 
                                 # Maintain node information
                                 if edge in self.edges_in_virtual:
-                                    print("---pass---")
                                     pass
                                 else:
                                     self.edges_in_virtual.append(edge)
 
-                                    # Draw edge line in doc
-                                    edge.generate_edge_line("v-edge")
                     else:
+                        # ドロネー分割以外のアルゴリズム
+                        new_edges, new_triangles = get_adjacent_relationships(virtual_node, gl_nodes, self.triangles_on_gl)
+
                         # ドロネー分割
-                        new_edges = delaunay_triangulation(gl_nodes)
+                        # new_edges = delaunay_triangulation(gl_nodes)
+
 
                         # Maintain node information
                         for edge in new_edges:
                             if edge in self.edges_in_virtual:
-                                print("---pass---")
                                 pass
                             else:
                                 self.edges_in_virtual.append(edge)
 
-                                # Draw edge line in doc
-                                edge.generate_edge_line("v-edge")
+                        for triangle in new_triangles:
+                            if triangle in self.triangles_on_gl:
+                                pass
+                            else:
+                                self.triangles_on_gl.append(triangle)
+
+                                # Draw triangle line in doc
+                                triangle.draw_divide_triangle()
 
                     # Constructing Virtual Graphs
                     self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
@@ -322,8 +329,6 @@ class Playground:
                     # TODO 1. 現状だと、サイクルの判定ができていないアルゴリズムになっているので変更する必要あり
                     if not self.virtual_graph.virtual_node_history:
                         if virtual_node.having_edges_to_virtual_node:
-                            # TODO 持っているエッジの数で場合分け？ 1個->黄色から生成 | 2個->青色から生成
-
                             for edge in virtual_node.having_edges_to_virtual_node:
                                 some_history_list = []
                                 history_list = []

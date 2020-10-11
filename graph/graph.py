@@ -687,18 +687,22 @@ class Graph:
                         missing_edge.timber.status = 2  # 青色
 
                         # 2. Master Timberが保持しているsplit timberの色を変更する
-                        # 2-1. 三角形を構成しているエッジを構成しているsplit timber
+                        for split_timber in missing_edge.timber.split_timbers:
+                            rs.ObjectColor(split_timber.surface_guid, [225, 225, 0])  # 黄色
+                            split_timber.status = 1  # 黄色
+
+                        # 2-1. 三角形を構成しているエッジを構成しているsplit timberは青色
                         rs.ObjectColor(missing_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
                         missing_edge.split_timber.status = 2  # 青色
 
-                        # 2-2. 三角形間に結ばれるエッジを構成しているsplit timber
+                        # 2-2. 三角形間に結ばれるエッジを構成しているsplit timberは青色
                         for v_edge in virtual_node.having_edges_to_virtual_node:
                             if v_edge.real_edge:
                                 if v_edge.real_edge.split_timber.surface_guid:
                                     rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
                                     v_edge.real_edge.split_timber.status = 2  # 青色
 
-                        # 3. 端部は黄色に変更
+                        # 2-3. 端部は黄色に変更
                         for v_edge in virtual_node.having_edges_to_leaf_node:
                             if v_edge.real_edge.split_timber.surface_guid:
                                 rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
@@ -710,12 +714,7 @@ class Graph:
 
         # 2. 部分の判定
         # 全体の判定では処理されなかった部材の色分けを行う
+        print("Num of timber: {0}".format(len(check_timber_list_in_playground)))
+
         for timber in check_timber_list_in_playground:
             timber.color_code_timber()
-
-        # TODO 黄色の判定 -> 固定はされているが、どこか黄色の部分が折れると部分的な崩壊などが起こる
-        # TODO 接続している部材の色が黄色や赤色の場合？
-        # TODO GLに接地しているReal Graph上のサイクルから出発し、そのサイクルが接続しているサイクルが持つTimberは黄色？
-
-        # TODO 赤色の判定 -> 全体で見たときに、赤色の材になるような部材があるかを判定する
-        # TODO
