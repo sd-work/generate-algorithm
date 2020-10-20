@@ -17,6 +17,7 @@ class Graph:
         self.nodes = nodes
         self.edges = edges
         self.contiguous_list = []
+
         self.cycles = []
         self.cycles_instance = []
 
@@ -44,90 +45,123 @@ class Graph:
         # print("contiguous_list: {0}".format(temp_contiguous_list))
 
     @staticmethod
-    def create_node_from_joint_pts(num_nodes_in_playground, joint_pts_info):
-        # Get joint point nodes
+    def create_node_from_joint_pts(num_nodes_in_structure, joint_pts_info):
         joint_pts_nodes = []
 
         for i, joint_pt_info in enumerate(joint_pts_info):
             joint_pt = joint_pt_info[1]
-            joint_pt_node = Node(num_nodes_in_playground + 2 + i, joint_pt)
+            joint_pt_node = Node(num_nodes_in_structure + 2 + i, joint_pt)
             joint_pts_nodes.append(joint_pt_node)
 
-            # Draw node in doc
-            joint_pt_node.generate_node_point("r-node")
+            # Draw node point in doc
+            joint_pt_node.generate_node_point("node")
 
         return joint_pts_nodes
 
-    def get_closest_edge_from_test_point(self, test_pt):
+    @staticmethod
+    def get_closest_edge_from_test_point(test_pt, edges):
         edge_to_get = None
         min_distance = 10000
 
-        for edge in self.edges:
-            distance = edge.edge_line.DistanceTo(test_pt, True)
+        for edge in edges:
+            rc, t = edge.edge_line.ClosestPoint(test_pt)
 
-            if distance < min_distance:
-                min_distance = distance
-                edge_to_get = edge
-            else:
-                continue
+            if t:
+                local_pt = edge.edge_line.PointAt(t)
+
+                # Distance test point to local point which is on edge line
+                distance = Point3d.DistanceTo(test_pt, local_pt)
+
+                if distance < min_distance:
+                    min_distance = distance
+                    edge_to_get = edge
+                else:
+                    continue
 
         return edge_to_get
 
-    def detect_edge_of_real_graph(self, num_joint_pts, node1, node2, edges_in_playground, joint_pts_nodes=None,
-                                  timber=None):
+    @staticmethod
+    def detect_edges_of_structure(num_joint_pts, node1, node2, edges_in_structure, joint_pts_nodes=None, timber=None):
+        bolts = []  # ボルト群
 
+        rs.EnableRedraw(False)
+
+        # There are not joint points
         if num_joint_pts == 0:
             id = str(node1.id) + "-" + str(node2.id)
             edge = Edge(id, node1, node2, timber)
 
             # Draw edge line in doc
-            edge.generate_edge_line("r-edge")
+            edge.generate_edge_line("edge")
 
-            """About New Node"""
+            """About connection of between new node"""
             node1.connected_nodes.append(node2)
             node2.connected_nodes.append(node1)
 
             """About split timber instance"""
-            edge.timber = timber  # TODO parent timber
-            edge.split_timber = timber  # TODO split timber
+            edge.timber = timber  # master timber
+            edge.split_timber = timber  # child timber
 
-            """About Timber instance"""
+            """About timber instance"""
             # Record the nodes and edges which adding timber has
-            timber.set_nodes([node1, node2])
+            timber.set_nodes([node1, node2])  # both ends node
             timber.set_having_edge([edge])
 
-            """About playground instance"""
-            edges_in_playground.append(edge)
+            """About structure instance"""
+            edges_in_structure.append(edge)
 
+        # There are some joint points
         else:
             delete_old_edges = []
-            temp_split_timbers = []  # 新たに追加するTimberを分割した時のsplit timber instanceを格納しておく
-            end_point_nodes = [node1, node2]
+            temp_split_timbers = []  # adding timberを分割した時のsplit timber instanceを格納しておく
+            end_point_nodes = [node1, node2]  # both ends point of adding timbers
 
             if num_joint_pts == 2:
                 nodes_to_get = Graph.get_closest_node_from_test_point(joint_pts_nodes, end_point_nodes)
             else:
                 nodes_to_get = []
 
+            # 接合部の数だけ処理を行う
             for i in range(num_joint_pts):
-                joint_pt_node = joint_pts_nodes[i]
-                edge_to_get = self.get_closest_edge_from_test_point(joint_pt_node.point)
-                print("edge to get: {0}".format(edge_to_get.id))
+                ends_of_bolt = []  # ボルトの両端部の座標値
+                joint_pt_node = joint_pts_nodes[i]  # joint point node
+                test_pt = joint_pt_node.point  # Point3d
+                edge_to_get = Graph.get_closest_edge_from_test_point(test_pt, edges_in_structure)
+                # print("edge to get: {0}".format(edge_to_get.id))
 
                 """ Get edge(adding timber node and joint point node) """
                 # 接合数が1つの場合
                 if num_joint_pts == 1:
+                    """About split timber instance and generate edge instance"""
+                    # Split the timber at the joint point
+                    split_timbers, end_of_bolt = timber.split_timber_surface(test_pt, timber)
+
+                    # ボルトの2つの端点のうちの1つ(1つ目)を格納する
+                    ends_of_bolt.append(end_of_bolt)
+
+                    # joint pt nodeにボルトの端点情報(1つ目)を保持させる
+                    joint_pt_node.ends_pt_of_bolt_1 = end_of_bolt
+                    joint_pt_node.ends_pt_of_bolt.append(ends_of_bolt)
+
+                    # 接合点は部材と部材が接している部分ではなく、接合点から一番近い中心線上のある点
+                    joint_pt_node.structural_type = 2  # 接合点
+                    joint_pt_node.contact_pt = joint_pt_node.point  # 部材1と部材2の接地点
+                    joint_pt_node.point = end_of_bolt  # 接合点 -> この接合点はTimberの中心線上に存在
+
                     id = str(node1.id) + "-" + str(joint_pt_node.id)
                     edge1 = Edge(id, node1, joint_pt_node, timber)
 
                     id = str(node2.id) + "-" + str(joint_pt_node.id)
                     edge2 = Edge(id, node2, joint_pt_node, timber)
 
-                    # Draw edge line in doc
-                    edge1.generate_edge_line("r-edge")
-                    edge2.generate_edge_line("r-edge")
+                    # Draw edge line guid in doc
+                    edge1.generate_edge_line("edge")
+                    edge2.generate_edge_line("edge")
 
-                    """About New Node"""
+                    # Record the split timber in edge and Record the edges which split timber has
+                    Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
+
+                    """About connection of both ends node and joint point"""
                     # Record the nodes to which each node is connected
                     node1.set_connected_nodes(joint_pt_node)
                     node2.set_connected_nodes(joint_pt_node)
@@ -137,22 +171,18 @@ class Graph:
                     joint_pt_node.set_connected_nodes([node1, node2, edge_to_get.start_node, edge_to_get.end_node])
                     joint_pt_node.set_having_edge([edge1, edge2])
 
-                    """About Timber instance"""
+                    # Todo record adding timber information
+                    joint_pt_node.set_timbers_on_contact_pt([timber])
+
+                    """About timber instance"""
                     # Record the nodes and edges which adding timber has
                     timber.set_nodes([node1, node2, joint_pt_node])
                     timber.set_joint_pt_nodes([joint_pt_node])
                     timber.set_having_edge([edge1, edge2])
 
-                    """About split timber instance"""
-                    # Split the timber at the joint point
-                    split_timbers = timber.split_timber_surface(joint_pt_node.point, timber)
-
-                    # Record the split timber in edge and Record the edges which split timber has
-                    Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
-
-                    """About playground instance"""
+                    """About structure instance"""
                     # Maintain node information
-                    edges_in_playground += edge1, edge2
+                    edges_in_structure += edge1, edge2
 
                 # 接合数が2つの場合
                 elif num_joint_pts == 2:
@@ -163,61 +193,18 @@ class Graph:
                     else:
                         joint_pt_node2 = joint_pts_nodes[0]
 
-                    id = str(node_to_get.id) + "-" + str(joint_pt_node.id)
-                    edge1 = Edge(id, node_to_get, joint_pt_node, timber)
-
-                    id = str(joint_pt_node.id) + "-" + str(joint_pt_node2.id)
-                    edge2 = Edge(id, joint_pt_node, joint_pt_node2, timber)
-
-                    # Draw edge line in doc
-                    if i == 0:
-                        edge1.generate_edge_line("r-edge")
-                    else:
-                        edge1.generate_edge_line("r-edge")
-                        edge2.generate_edge_line("r-edge")
-
-                    """About New Node"""
-                    node_to_get.set_connected_nodes(joint_pt_node)
-
-                    """About joint point node"""
-                    joint_pt_node.set_connected_nodes(
-                        [node_to_get, joint_pt_node2, edge_to_get.start_node, edge_to_get.end_node])
-
-                    """About Timber instance | joint point node | playground instance"""
-                    if i == 0:
-                        # About Timber instance
-                        timber.set_nodes([node1, node2, joint_pt_node])
-                        timber.set_joint_pt_nodes([joint_pt_node])
-                        timber.set_having_edge([edge1])
-
-                        # About joint point node
-                        joint_pt_node.set_having_edge([edge1])
-
-                        # About playground instance
-                        edges_in_playground.append(edge1)
-                    else:
-                        # About Timber instance
-                        timber.set_nodes([joint_pt_node])
-                        timber.joint_pts_nodes.append(joint_pt_node)
-                        timber.set_having_edge([edge1, edge2])
-
-                        # About joint point node
-                        joint_pts_nodes[0].set_having_edge([edge2])
-                        joint_pt_node.set_having_edge([edge1, edge2])
-
-                        # About playground instance
-                        edges_in_playground += edge1, edge2
-
-                    """About split timber instance"""
+                    """About split timber instance and generate edge instance"""
                     if i == 0:
                         # Split timber
-                        split_timbers = timber.split_timber_surface(joint_pt_node.point, timber)
+                        split_timbers, end_of_bolt = timber.split_timber_surface(test_pt, timber)
 
                         # 分割したsplit timber instanceを格納しておく
                         temp_split_timbers += split_timbers
-                    else:
-                        test_pt = joint_pt_node.point
 
+                        # ボルトの2つの端点のうちの1つ(1つ目)を格納する
+                        ends_of_bolt.append(end_of_bolt)
+                        joint_pt_node.ends_pt_of_bolt_1 = end_of_bolt
+                    else:
                         rc, u1, v1 = Surface.ClosestPoint(temp_split_timbers[0].surface, test_pt)
                         rc, u2, v2 = Surface.ClosestPoint(temp_split_timbers[1].surface, test_pt)
 
@@ -233,26 +220,110 @@ class Graph:
                             temp_parent_timber = temp_split_timbers[1]
 
                         # Split timber
-                        split_timbers = timber.split_timber_surface(joint_pt_node.point, temp_parent_timber)
+                        split_timbers, end_of_bolt = timber.split_timber_surface(test_pt, temp_parent_timber)
+
+                        # ボルトの2つの端点のうちの1つ(1つ目)を格納する
+                        ends_of_bolt.append(end_of_bolt)
+                        joint_pt_node.ends_pt_of_bolt_1 = end_of_bolt
 
                         # 分割したsplit timber instanceを格納しておく
                         temp_split_timbers += split_timbers
 
-                        # Delete timber guid form doc
+                        # Delete parent timber guid form doc
                         temp_parent_timber.delete_timber_guid()
 
                         # Remove temp parent timber from instance variable which adding timber has
-                        # timber.split_timbers.remove(temp_parent_timber)
                         temp_split_timbers.remove(temp_parent_timber)
 
                         # 分割したsplit timber instanceを格納しておく
                         temp_split_timbers += split_timbers
 
+                    # joint pt nodeにボルトの端点情報(1つ目)を保持させる
+                    joint_pt_node.ends_pt_of_bolt.append(ends_of_bolt)
+
+                    # 接合点は部材と部材が接している部分ではなく、接合点から一番近い中心線上のある点
+                    joint_pt_node.structural_type = 2  # 接合点
+                    joint_pt_node.contact_pt = joint_pt_node.point  # 部材1と部材2の接地点
+
+                    if i == 0:  # Todo ここの設定が重要になる
+                        joint_pt_node.point = ends_of_bolt[0]  # ボルトの両端部の1端がindex0でもう一方がindex1
+                    else:
+                        joint_pt_node.point = ends_of_bolt[0]  # ボルトの両端部の1端がindex0でもう一方がindex1
+                        joint_pt_node2.point = bolts[0][0]  # これは1つ前のボルトの1端(adding timber側)
+
+                    id = str(node_to_get.id) + "-" + str(joint_pt_node.id)
+                    edge1 = Edge(id, node_to_get, joint_pt_node, timber)
+
+                    id = str(joint_pt_node.id) + "-" + str(joint_pt_node2.id)
+                    edge2 = Edge(id, joint_pt_node, joint_pt_node2, timber)
+
+                    # Draw edge line in doc
+                    if i == 0:
+                        # Draw edge line guid in doc
+                        edge1.generate_edge_line("edge")
+                    else:
+                        # Draw edge line guid in doc
+                        edge1.generate_edge_line("edge")
+                        edge2.generate_edge_line("edge")
+
                     # Record the split timber in edge and Record the edges which split timber has
                     Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
 
+                    """About connection of between a end point and joint point"""
+                    node_to_get.set_connected_nodes(joint_pt_node)
+
+                    """About joint point node"""
+                    joint_pt_node.set_connected_nodes(
+                        [node_to_get, joint_pt_node2, edge_to_get.start_node, edge_to_get.end_node])
+
+                    # Todo record adding timber information
+                    joint_pt_node.set_timbers_on_contact_pt([timber])
+
+                    """About timber instance | joint point node | structure instance"""
+                    if i == 0:
+                        # About timber instance
+                        timber.set_nodes([node1, node2, joint_pt_node])
+                        timber.set_joint_pt_nodes([joint_pt_node])
+                        timber.set_having_edge([edge1])
+
+                        # About joint point node
+                        joint_pt_node.set_having_edge([edge1])
+
+                        # About structure instance
+                        edges_in_structure.append(edge1)
+                    else:
+                        # About timber instance
+                        timber.set_nodes([joint_pt_node])
+                        timber.joint_pts_nodes.append(joint_pt_node)
+                        timber.set_having_edge([edge1, edge2])
+
+                        # About joint point node
+                        joint_pts_nodes[0].set_having_edge([edge2])
+                        joint_pt_node.set_having_edge([edge1, edge2])
+
+                        # About structure instance
+                        edges_in_structure += edge1, edge2
+
                 """ Get edge(Already generated timber node and joint point node) """
                 already_generated_timber = edge_to_get.timber
+
+                """About split timber instance"""
+                temp_parent_timber = edge_to_get.split_timber
+                split_timbers, end_of_bolt = already_generated_timber.split_timber_surface(test_pt, temp_parent_timber)
+
+                # ボルトの2つの端点のうちの1つ(2つ目)を格納する
+                ends_of_bolt.append(end_of_bolt)
+
+                # joint pt nodeにボルトの端点情報(2つ目)を保持させる
+                joint_pt_node.ends_pt_of_bolt_2 = end_of_bolt
+
+                # 接合点は部材と部材が接している部分ではなく、接合点から一番近い中心線上のある点
+                # Todo joint point nodeにbolt end point変数をつくり、そこに値を格納する
+                # Todo コピーしてしまうと同一のjoint pointとしてみなせなくなるため？
+                joint_pt_node = copy.copy(joint_pt_node)  # ここでjoint point nodeを複製する
+                joint_pt_node.structural_type = 2  # 接合点
+                joint_pt_node.contact_pt = joint_pt_node.point  # 部材1と部材2の接地点
+                joint_pt_node.point = end_of_bolt  # 接合点 -> この接合点はTimberの中心線上に存在
 
                 id = str(edge_to_get.start_node.id) + "-" + str(joint_pt_node.id)
                 edge1 = Edge(id, edge_to_get.start_node, joint_pt_node, already_generated_timber)
@@ -261,15 +332,19 @@ class Graph:
                 edge2 = Edge(id, edge_to_get.end_node, joint_pt_node, already_generated_timber)
 
                 # Draw edge line in doc
-                edge1.generate_edge_line("r-edge")
-                edge2.generate_edge_line("r-edge")
+                edge1.generate_edge_line("edge")
+                edge2.generate_edge_line("edge")
 
-                """About New Node"""
+                # Record the split timber in edge and Record the edges which split timber has
+                Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
+
+                """About connection of both ends point and joint point"""
                 # Start node that an edge has
                 temp_connected_nodes = []
+
                 if len(edge_to_get.start_node.connected_nodes) == 4:
                     for r_connected_node in edge_to_get.start_node.connected_nodes:
-                        if r_connected_node == edge_to_get.end_node:  # edge_to_get.end_node.id TODO
+                        if r_connected_node == edge_to_get.end_node:  # edge_to_get.end_node.id
                             continue
                         else:
                             temp_connected_nodes.append(r_connected_node)
@@ -289,6 +364,7 @@ class Graph:
 
                 # End node that an edge has
                 temp_connected_nodes = []
+
                 if len(edge_to_get.end_node.connected_nodes) == 4:
                     for r_connected_node in edge_to_get.end_node.connected_nodes:
                         if r_connected_node == edge_to_get.start_node:  # edge_to_get.start_node.id
@@ -311,44 +387,27 @@ class Graph:
                 """About joint point node"""
                 joint_pt_node.set_having_edge([edge1, edge2])
 
-                """About judging on GL"""
-                # Judge whether joint point nodes have two GL node
-                gl_nodes = joint_pt_node.judge_node_on_ground()
+                # Todo record adding timber information
+                joint_pt_node.set_timbers_on_contact_pt([already_generated_timber])
 
-                if gl_nodes:
-                    id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
-                    edge = Edge(id, gl_nodes[0], gl_nodes[1], None)
-
-                    # Maintain node information
-                    edges_in_playground.append(edge)
-
-                    # Draw edge line in doc
-                    edge.generate_edge_line("r-edge")
-
-                """About Timber instance"""
+                """About timber instance"""
                 already_generated_timber.set_nodes([joint_pt_node])
                 already_generated_timber.set_joint_pt_nodes([joint_pt_node])
 
                 # About edge
-                edge1.is_on_virtual_cycle = edge_to_get.is_on_virtual_cycle  # TODO ここでエラーがでてしまう？色分けの時
+                edge1.is_on_virtual_cycle = edge_to_get.is_on_virtual_cycle
                 edge2.is_on_virtual_cycle = edge_to_get.is_on_virtual_cycle
-                already_generated_timber.edges.remove(edge_to_get)  # remove edge to get id from edges list
+                already_generated_timber.edges.remove(edge_to_get)  # remove 'edge to get' id from edges list
                 already_generated_timber.set_having_edge([edge1, edge2])
 
-                """About playground instance"""
-                edges_in_playground += edge1, edge2
-
-                """About split timber instance"""
-                temp_parent_timber = edge_to_get.split_timber  # TODO ここは正確にはsplit timber instanceを選択する(初回以外)
-                split_timbers = already_generated_timber.split_timber_surface(joint_pt_node.point, temp_parent_timber)
-
-                # Record the split timber in edge and Record the edges which split timber has
-                Edge.record_split_timber_to_edge(edge1, edge2, split_timbers)
+                """About structure instance"""
+                edges_in_structure += edge1, edge2
 
                 """Delete old edge"""
                 if num_joint_pts == 1:
                     edge_to_get.delete_guid()
-                    edges_in_playground.remove(edge_to_get)
+                    edges_in_structure.remove(edge_to_get)
+
                     del edge_to_get
 
                 elif num_joint_pts == 2:
@@ -359,9 +418,18 @@ class Graph:
 
                         for old_edge in delete_old_edges:
                             old_edge.delete_guid()
-                            edges_in_playground.remove(old_edge)
+                            edges_in_structure.remove(old_edge)
 
-    def detect_edge_of_virtual_graph(self, virtual_node, edges_in_playground, edges_in_virtual):
+                            del old_edge
+
+                """Maintain ends point of bolt information"""
+                bolts.append(ends_of_bolt)
+
+        rs.EnableRedraw(True)
+
+        return bolts
+
+    def detect_edge_of_virtual_graph(self, virtual_node, edges_in_structure, edges_in_virtual):
         adding_virtual_nodes = []
         missing_edges = []
         new_virtual_connected_nodes = []
@@ -416,7 +484,7 @@ class Graph:
 
                     timber = None
                     real_edge = None
-                    for edge in edges_in_playground:
+                    for edge in edges_in_structure:
                         if check_edge_id == edge.id:
                             real_edge = edge
                             timber = real_edge.timber
@@ -545,7 +613,7 @@ class Graph:
         for missing_edge in missing_edges:
             missing_edge_id = str(missing_edge[0]) + "-" + str(missing_edge[1])
 
-            for edge in edges_in_playground:
+            for edge in edges_in_structure:
                 if missing_edge_id == edge.id:
                     virtual_node.missing_edges.append(edge)
 
@@ -702,11 +770,11 @@ class Graph:
                                     rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
                                     v_edge.real_edge.split_timber.status = 2  # 青色
 
-                        # 2-3. 端部は黄色に変更
-                        for v_edge in virtual_node.having_edges_to_leaf_node:
-                            if v_edge.real_edge.split_timber.surface_guid:
-                                rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
-                                v_edge.real_edge.split_timber.status = 1  # 黄色
+                        # # 2-3. 端部は黄色に変更
+                        # for v_edge in virtual_node.having_edges_to_leaf_node:
+                        #     if v_edge.real_edge.split_timber.surface_guid:
+                        #         rs.ObjectColor(v_edge.real_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                        #         v_edge.real_edge.split_timber.status = 1  # 黄色
 
                         # 色分けを行った部材はリストから消去する
                         if missing_edge.timber in check_timber_list_in_playground:
@@ -714,7 +782,8 @@ class Graph:
 
         # 2. 部分の判定
         # 全体の判定では処理されなかった部材の色分けを行う
-        print("Num of timber: {0}".format(len(check_timber_list_in_playground)))
+        # print("Num of timber: {0}".format(len(check_timber_list_in_playground)))
 
         for timber in check_timber_list_in_playground:
             timber.color_code_timber()
+

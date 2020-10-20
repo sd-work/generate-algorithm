@@ -13,6 +13,7 @@ import codecs
 from timber import *
 from target_line import *
 from optiimization import *
+from bolt import Bolt
 
 from graph.graph import Graph
 from graph.node import Node
@@ -22,6 +23,8 @@ from graph.search import Search
 from delaunay.delaunay import delaunay_triangulation
 from delaunay.delaunay import get_adjacent_relationships
 
+from structural_analysis.structural_analysis import Structure
+
 num_joint_pts = 0
 joint_pts_info = []
 
@@ -30,25 +33,31 @@ class Playground:
 
     def __init__(self):
         self.timber_list_in_database = []  # データベース上にある部材
-        self.timber_list_in_playground = []  # 遊び場を構成している部材
-        self.target_line_in_playground = []  # 遊び場を構成しているターゲット曲線
 
-        # About Real graph
-        self.real_graph = Graph("real", [], [])
-        self.nodes_in_playground = []  # 現状の構築物に存在するノード群
-        self.edges_in_playground = []  # 現状の構築物に存在するエッジ群
-        self.cycle_in_playground = []  # 現状の構築物に存在するサイクル群
-
-        # About Virtual graph
-        self.virtual_graph = Graph("virtual", [], [])
-        self.nodes_in_virtual = []  # virtual graphに存在するノード群
-        self.edges_in_virtual = []  # virtual graphに存在するエッジ群
-        self.cycle_in_virtual = []  # virtual graphに存在するサイクル群
-        self.triangles_on_gl = []  # Virtual graphに存在する三角形群
-
+        # About adding timber
         self.adding_timber = None
         self.adding_timbers = []
         self.adding_target_line = None
+
+        # About Structure model
+        self.structure = Structure()  # 構造体モデル(化)
+        self.timbers_in_structure = []  # 遊び場を構成している部材
+        self.nodes_in_structure = []  # 構造体が保持するノード群
+        self.edges_in_structure = []  # 構造体が保持するエッジ群
+        self.bolts_in_structure = []  # 構造体が保持するボルト群(今回はボルトも部材の1つとしてカウントする )
+
+        # About Real graph
+        # self.real_graph = Graph("real", [], [])
+        # self.nodes_in_structure = []  # 構造体が保持するノード群
+        # self.edges_in_structure = []  # 構造体が保持するエッジ群
+        # self.cycle_in_playground = []  # 構造体が保持するサイクル群
+
+        # About Virtual graph
+        # self.virtual_graph = Graph("virtual", [], [])
+        # self.nodes_in_virtual = []  # virtual graphに存在するノード群
+        # self.edges_in_virtual = []  # virtual graphに存在するエッジ群
+        # self.cycle_in_virtual = []  # virtual graphに存在するサイクル群
+        # self.triangles_on_gl = []  # Virtual graphに存在する三角形群
 
     # 部材データを生成する TODO ここはスキャンした3Dデータに切り替える
     def generate_timber_info(self, num_timber):
@@ -89,16 +98,17 @@ class Playground:
         rs.AddLayer("playground", [0, 0, 0], True, False, None)
 
         # real graph layer
-        rs.AddLayer("real_graph", [0, 0, 0], False, False, None)
-        rs.AddLayer("r-node", [0, 0, 0], True, False, "real_graph")
-        rs.AddLayer("r-edge", [0, 0, 0], True, False, "real_graph")
-        rs.AddLayer("r-cycle", [0, 0, 0], True, False, "real_graph")
+        rs.AddLayer("structure_model", [0, 0, 0], False, False, None)
+        rs.AddLayer("node", [0, 0, 0], True, False, "structure_model")
+        rs.AddLayer("edge", [0, 0, 0], True, False, "structure_model")
+        rs.AddLayer("bolt", [0, 0, 0], True, False, "structure_model")
+        # rs.AddLayer("r-cycle", [0, 0, 0], True, False, "structure_model")
 
         # virtual graph layer
-        rs.AddLayer("virtual_graph", [0, 0, 0], False, False, None)
-        rs.AddLayer("v-node", [0, 0, 0], True, False, "virtual_graph")
-        rs.AddLayer("v-edge", [0, 0, 0], True, False, "virtual_graph")
-        rs.AddLayer("v-cycle", [0, 0, 0], True, False, "virtual_graph")
+        # rs.AddLayer("virtual_graph", [0, 0, 0], False, False, None)
+        # rs.AddLayer("v-node", [0, 0, 0], True, False, "virtual_graph")
+        # rs.AddLayer("v-edge", [0, 0, 0], True, False, "virtual_graph")
+        # rs.AddLayer("v-cycle", [0, 0, 0], True, False, "virtual_graph")
 
     def get_target_line(self):
         self.adding_target_line = TargetLine.get_target_line()
@@ -117,30 +127,27 @@ class Playground:
         self.adding_timbers.append(self.adding_timber)
 
         #  ターゲット曲線から木材の生成パターンを判定する
-        self.adding_timber.judge_timber_pattern(self.adding_target_line, self.timber_list_in_playground)
-
-        # 遊び場を構成しているターゲット曲線群に追加
-        self.target_line_in_playground.append(self.adding_target_line)
+        self.adding_timber.judge_timber_pattern(self.adding_target_line, self.timbers_in_structure)
 
     def transform_timber(self):
         # translate
-        origin_p = self.adding_timber.center_line.First  # timberの端点
+        origin_p = self.adding_timber.center_line.PointAtStart  # timberの端点
         transform_p = self.adding_target_line.start_p  # ターゲット曲線の端点
         self.adding_timber.translate_timber(origin_p, transform_p)
 
         # rotation
         vector_timber = Rhino.Geometry.Vector3d(
-            self.adding_timber.center_line.Last - self.adding_timber.center_line.First)
+            self.adding_timber.center_line.PointAtEnd - self.adding_timber.center_line.PointAtStart)
         angle = Vector3d.VectorAngle(vector_timber, self.adding_target_line.vector)
         axis = Vector3d.CrossProduct(vector_timber, self.adding_target_line.vector)
-        rotation_center = self.adding_timber.center_line.First
+        rotation_center = self.adding_timber.center_line.PointAtStart
         self.adding_timber.rotate_timber(angle, axis, rotation_center)
 
     def minimized_joint_area(self):
         global num_joint_pts, joint_pts_info
 
         # ターゲット曲線の情報から接合点、ベクトルを計算し、取得する
-        joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timber_list_in_playground)
+        joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timbers_in_structure)
 
         # number of joint points is 1
         if len(joint_pts_info) == 1:
@@ -181,13 +188,13 @@ class Playground:
     def determine_status_of_structure(self):
         print("num_joint_pts: {0}".format(num_joint_pts))
 
-        num_nodes_in_playground = len(self.real_graph.nodes)
+        num_nodes_in_structure = len(self.real_graph.nodes)
 
         for adding_timber in self.adding_timbers:
 
             """Get Node in Real graph"""
-            node1 = Node(num_nodes_in_playground, adding_timber.center_line.First)
-            node2 = Node(num_nodes_in_playground + 1, adding_timber.center_line.Last)
+            node1 = Node(num_nodes_in_structure, adding_timber.center_line.First)
+            node2 = Node(num_nodes_in_structure + 1, adding_timber.center_line.Last)
 
             # Regard GL point node as Joint point node
             if -50 <= node1.z <= 50:
@@ -201,7 +208,7 @@ class Playground:
             node2.generate_node_point("r-node")
 
             # Maintain node information
-            self.nodes_in_playground += node1, node2
+            self.nodes_in_structure += node1, node2
 
             """Get Edge in Real graph """
             # If there are not joint point
@@ -211,17 +218,17 @@ class Playground:
             # If there are some joint points
             else:
                 # Get joint point nodes
-                joint_pts_nodes = Graph.create_node_from_joint_pts(num_nodes_in_playground, joint_pts_info)
+                joint_pts_nodes = Graph.create_node_from_joint_pts(num_nodes_in_structure, joint_pts_info)
 
                 # Maintain node information
-                self.nodes_in_playground.extend(joint_pts_nodes)
+                self.nodes_in_structure.extend(joint_pts_nodes)
 
             # Detecting edges in real graph
-            self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_playground,
+            self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_structure,
                                                       joint_pts_nodes, adding_timber)
 
         # Constructing Real Graphs
-        self.real_graph.set_graph(self.nodes_in_playground, self.edges_in_playground)
+        self.real_graph.set_graph(self.nodes_in_structure, self.edges_in_structure)
         self.real_graph.create_graph()
 
         # Detecting cycles in real graph by using search method
@@ -231,7 +238,7 @@ class Playground:
         # If some cycles are detected
         if cycles:
             # Drawing cycle mesh or polyline in doc
-            new_cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_playground, "r-cycle")
+            new_cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_structure, "r-cycle")
 
             # If a new real cycle is detected
             if new_cycles:
@@ -254,7 +261,7 @@ class Playground:
                     """Get virtual Edge"""
                     # Search edges of virtual graph
                     adding_virtual_nodes = self.virtual_graph.detect_edge_of_virtual_graph(virtual_node,
-                                                                                           self.edges_in_playground,
+                                                                                           self.edges_in_structure,
                                                                                            self.edges_in_virtual)
 
                     # Maintain node information
@@ -295,11 +302,11 @@ class Playground:
 
                     else:
                         # ドロネー分割以外のアルゴリズム
-                        new_edges, new_triangles = get_adjacent_relationships(virtual_node, gl_nodes, self.triangles_on_gl)
+                        new_edges, new_triangles = get_adjacent_relationships(virtual_node, gl_nodes,
+                                                                              self.triangles_on_gl)
 
                         # ドロネー分割
                         # new_edges = delaunay_triangulation(gl_nodes)
-
 
                         # Maintain node information
                         for edge in new_edges:
@@ -397,14 +404,94 @@ class Playground:
 
         # 新たに生成した部材を記録しておく
         for timber in self.adding_timbers:
-            self.timber_list_in_playground.append(timber)
+            self.timbers_in_structure.append(timber)
 
         # 部材の色分けを行う(全体の判定 -> 部分の判定)
-        self.virtual_graph.color_code_timbers(self.timber_list_in_playground)
+        self.virtual_graph.color_code_timbers(self.timbers_in_structure)
+
+    def analysis_structure(self, index):
+
+        num_nodes_in_structure = len(self.nodes_in_structure)
+
+        # 新たに生成した部材を記録しておく
+        for timber in self.adding_timbers:
+            self.timbers_in_structure.append(timber)
+
+        """Get node in structure"""
+        # About both ends of timber
+        node1 = Node(num_nodes_in_structure, self.adding_timber.center_line.PointAtStart)
+        node2 = Node(num_nodes_in_structure + 1, self.adding_timber.center_line.PointAtEnd)
+
+        node1.structural_type = 0  # 自由端
+        node2.structural_type = 0  # 自由端
+
+        # judge whether node1 and node2 is support point
+        if -100 <= node1.z <= 100:
+            node1.structural_type = 1  # 支点
+            self.adding_timber.is_generated_from_GL = True
+
+            # Maintain node information
+            self.structure.set_support_pt_nodes([node1])
+
+        if -100 <= node2.z <= 100:
+            node2.structural_type = 1  # 支点
+            self.adding_timber.is_generated_from_GL = True
+
+            # Maintain node information
+            self.structure.set_support_pt_nodes([node2])
+
+        # Draw node point in doc
+        node1.generate_node_point("node")
+        node2.generate_node_point("node")
+
+        # Maintain node information
+        self.nodes_in_structure += node1, node2
+
+        # About joint points
+        # If there are not joint points
+        if num_joint_pts == 0:
+            joint_pts_nodes = None
+
+        # If there are some joint points
+        else:
+            # Get joint point nodes
+            joint_pts_nodes = Graph.create_node_from_joint_pts(num_nodes_in_structure, joint_pts_info)
+
+            # Maintain node information
+            self.nodes_in_structure.extend(joint_pts_nodes)
+            self.structure.set_joint_pt_nodes(joint_pts_nodes)
+
+        """Get edge in structure"""
+        bolts = Graph.detect_edges_of_structure(num_joint_pts, node1, node2, self.edges_in_structure,
+                                                joint_pts_nodes,
+                                                self.adding_timber)
+
+        """Generate Bolt instance"""
+        for ends_bolt in bolts:
+            id = str(len(self.bolts_in_structure))
+            bolt = Bolt(id, ends_bolt[0], ends_bolt[1])
+            self.bolts_in_structure.append(bolt)
+
+            # draw bolt line in doc
+            bolt.draw_line_guid("bolt")
+
+        """Set timbers , nodes and edges to structure instance"""
+        # Todo ここは全ての部材やNodeなどを渡すのではなく、新たに生成されたオブジェクトのみを渡すように変更する
+        self.structure.set_timbers(self.timbers_in_structure)
+        self.structure.set_nodes(self.nodes_in_structure)
+        self.structure.set_edges(self.edges_in_structure, True)
+        self.structure.set_bolts(self.bolts_in_structure)
+
+        """Calculate redundancy of structure by using decision formula"""
+        self.structure.calc_degree_of_redundancy()
+        self.structure.draw_information(index)  # draw information of structure in doc and console
+
+        """Color code timber"""
+        self.structure.color_code_timbers()
 
     def reset(self):
         # Print the information of adding timber
-        # for timber in self.timber_list_in_playground:
+        # for timber in self.timbers_in_structure:
         #     print("timber{0} has {1} joint points".format(timber.id, len(timber.joint_pts_nodes)))
         #     print("timber{0} has {1} rigid points".format(timber.id, len(timber.rigid_joints)))
         #     print("timber{0} has {1} nodes".format(timber.id, [node.point for node in timber.nodes]))

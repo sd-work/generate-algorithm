@@ -10,8 +10,6 @@ class Node:
     def __init__(self, id, point, nodes_of_real_graph=None, is_on_gl=False):
         self.id = id
         self.point = point  # rhino common
-        self.point_guid = None
-        self.dot_text_guid = None
         self.x = point.X
         self.y = point.Y
         self.z = point.Z
@@ -21,11 +19,28 @@ class Node:
         self.having_edges = []  # Nodeが保持しているエッジ群
         self.is_on_GL = is_on_gl  # NodeがGLに接続しているかどうかを判定するフラグ
 
+        # About guid
+        self.point_guid = None
+        self.dot_text_guid = None
+
+        # About structural model
+        self.structural_type = -1  # 0: 自由端 1: 支点 2: 接合点
+
+        # About contact point which is joint point
+        self.contact_pt = None
+        self.timbers_on_contact_pt = []  # timbers which is on joint point
+
+        # About bolt
+        self.bolt = None  # 接合点である場合、接合部におけるBolt instance情報を保持する
+        self.ends_pt_of_bolt = []  # boltの両端部の座標値
+        self.ends_pt_of_bolt_1 = None  # boltの端部1
+        self.ends_pt_of_bolt_2 = None  # boltの端部2
+
         # Variables specific to virtual graph
-        self.nodes_of_real_graph = nodes_of_real_graph  # Nodes of Real graph that make up a node of Virtual graph
-        self.missing_edges = []  # Missing edges when trying to convert a real graph to a virtual graph
-        self.having_edges_to_virtual_node = []  # virtual node to virtual node which created by 3 real graph node
-        self.having_edges_to_leaf_node = []  # virtual node to leaf node
+        # self.nodes_of_real_graph = nodes_of_real_graph  # Nodes of Real graph that make up a node of Virtual graph
+        # self.missing_edges = []  # Missing edges when trying to convert a real graph to a virtual graph
+        # self.having_edges_to_virtual_node = []  # virtual node to virtual node which created by 3 real graph node
+        # self.having_edges_to_leaf_node = []  # virtual node to leaf node
 
     # Rhino空間上に描画する
     def generate_node_point(self, layer_name):
@@ -37,6 +52,13 @@ class Node:
         layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
         self.dot_text_guid = scriptcontext.doc.Objects.AddTextDot(str(self.id), self.point)
         rs.ObjectLayer(self.dot_text_guid, layer)
+
+    def set_timbers_on_contact_pt(self, timbers):
+        for timber in timbers:
+            if timber in self.timbers_on_contact_pt:
+                continue
+            else:
+                self.timbers_on_contact_pt.append(timber)
 
     def set_connected_nodes(self, nodes):
         if isinstance(nodes, list):

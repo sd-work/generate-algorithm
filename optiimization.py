@@ -398,7 +398,7 @@ class Optimization:
                 else:
 
                     events = Intersect.Intersection.CurveCurve(self_timber.target_line.Line,
-                                                               other_timber.center_line.ToPolylineCurve(),
+                                                               other_timber.center_line,
                                                                0.001, 0.0)
 
                     if not events:

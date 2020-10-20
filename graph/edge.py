@@ -16,10 +16,19 @@ class Edge:
             self.start_node = node2
             self.end_node = node1
             self.id = str(self.start_node.id) + "-" + str(self.end_node.id)
-        self.edge_line = Line(node1.point, node2.point)
-        self.edge_line_guid = None
+
+        # About layer
+        self.layer = None
+
+        # About line
+        self.edge_line = LineCurve(node1.point, node2.point)
+
+        # About Timber
         self.timber = timber  # Timber instance
         self.split_timber = None  # split timber surface
+
+        # About Guid
+        self.edge_line_guid = None
 
         # Variables specific to virtual graph
         self.real_edge = None
@@ -28,19 +37,21 @@ class Edge:
     def generate_edge_line(self, layer_name):
         # add edge line
         if layer_name == "r-edge":
-            layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
+            self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
         elif layer_name == "v-edge":
-            layer = rs.AddLayer(str(self.id), [0, 0, 255], True, False, layer_name)
+            self.layer = rs.AddLayer(str(self.id), [0, 0, 255], True, False, layer_name)
         else:
-            layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
+            self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
 
-        self.edge_line_guid = scriptcontext.doc.Objects.AddLine(self.edge_line)
-        rs.ObjectLayer(self.edge_line_guid, layer)
+        self.edge_line_guid = scriptcontext.doc.Objects.AddCurve(self.edge_line)
+        rs.ObjectLayer(self.edge_line_guid, self.layer)
 
     def delete_guid(self):
         rs.DeleteObject(self.edge_line_guid)
-
+        rs.DeleteLayer(self.layer)
+        
         self.edge_line_guid = None
+        self.layer = None
 
     @staticmethod
     def check_edge_in_edge_list(node1, node2, edge_list):

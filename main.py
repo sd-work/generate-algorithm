@@ -7,7 +7,7 @@ from playground import *
 if __name__ == "__main__":
 
     # parameter
-    num_processes = 8
+    num_processes = 5
 
     # playgroundインスタンスを生成
     playground = Playground()
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     # csvファイルを読み込み、木材情報を取り出す
     playground.open_csv_file()
 
-    for _ in range(num_processes):
+    for i in range(num_processes):
         # 01. ターゲット曲線を生成する
         playground.get_target_line()
 
@@ -34,13 +34,18 @@ if __name__ == "__main__":
 
         # 04. 木材の表面の最適化を行う
         flag = playground.minimized_joint_area()
-        if not flag:
-            break
+        if not flag: break
 
         # 05. グラフ表記から現状の構造体の状況を取得する
-        playground.determine_status_of_structure()
+        playground.analysis_structure(i)
+        # playground.determine_status_of_structure()
 
         # reset
         playground.reset()
 
         # TODO 00. csvファイル(データベース)の木材情報を更新する
+
+    # Master timberのsurface, center line guidを非表示にする
+    for timber in playground.timbers_in_structure:
+        rs.HideObject(timber.surface_guid)
+        rs.HideObject(timber.center_line_guid)

@@ -139,7 +139,7 @@ class Timber:
             self.center_points.append(point)
             self.section_curves.append(section_curve)
 
-        self.center_line = Rhino.Geometry.Polyline(self.center_points)
+        self.center_line = Rhino.Geometry.PolylineCurve(self.center_points)
 
         self.surface_breps = Rhino.Geometry.Brep.CreateFromLoft(self.section_curves, Point3d.Unset, Point3d.Unset,
                                                                 LoftType.Loose,
@@ -149,7 +149,7 @@ class Timber:
 
         # Rhinoモデル空間に更新内容を反映させる→TODO ここは最終的には最後に描画するようにする
         # 中心線
-        self.center_line_guid = scriptcontext.doc.Objects.AddPolyline(self.center_points)
+        self.center_line_guid = scriptcontext.doc.Objects.AddCurve(self.center_line)
         rs.ObjectLayer(self.center_line_guid, self.center_line_layer)
 
         # サーフェス
@@ -312,7 +312,7 @@ class Timber:
             pattern_info, curve_length_list = Optimization.get_pattern_of_processing_method(intersect_info_list)
 
             if pattern_info[0] == 2:
-                print("Optimization has been successful")
+                # print("Optimization has been successful")
 
                 joint_pt1 = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[0][1][0])
                 joint_pt2 = Optimization.get_mid_pt_in_closed_crv(intersect_info_list[1][1][0])
@@ -520,7 +520,7 @@ class Timber:
             # 既存の部材に接合しているかの判定--> +3
             for generated_timber in generated_timbers:
 
-                temp_target_curve = generated_timber.center_line.ToPolylineCurve()
+                temp_target_curve = generated_timber.center_line
                 events = Intersect.Intersection.CurveCurve(temp_target_curve, self.target_line.Line, 0.001, 0.0)
 
                 if events:
@@ -572,6 +572,7 @@ class Timber:
 
     def split_timber_surface(self, test_point, timber_instance=None):
         split_timber_instances = []
+        end_of_bolt = None
 
         # Get closest point on timber surface from test point which is joint point node
         if timber_instance is None:
@@ -593,8 +594,38 @@ class Timber:
             # Remove split timber from instance variable which already generated timber has
             timber_instance.master_timber.split_timbers.remove(timber_instance)
 
+        # Get closest point on center line of timber from test point which is joint point node
+        if timber_instance is None:
+            center_line = self.center_line
+        else:
+            center_line = timber_instance.center_line
+
+        # Generate surface to get point on center line of timber
+        domain_v = timber_srf.Domain(1)
+        range_domain_v = domain_v[1] - domain_v[0]
+        unit_range_domain_v = range_domain_v / 3
+
+        corners = []
+        for i in range(3):
+            pt = timber_srf.PointAt(u_parameter, -1 * unit_range_domain_v * i)
+            corners.append(pt)
+
+        srf = NurbsSurface.CreateFromCorners(corners[0], corners[1], corners[2])
+
+        events = Intersect.Intersection.CurveSurface(center_line, srf, 0.01, 0.0)
+
+        for event in events:
+            test_point = event.PointA
+            end_of_bolt = test_point  # test point is one of ends point of bolt
+
+        # Calculate parameter of closest point
+        rc, parameter = center_line.ClosestPoint(test_point)
+
+        # Split center line at parameter
+        split_center_lines = center_line.Split(parameter)
+
         # Split timber instance
-        for split_srf in split_srf_list:
+        for i, split_srf in enumerate(split_srf_list):
             # 引数に渡されたTimber instanceがMaster Timberである場合
             if timber_instance.master_timber is None:
                 split_timber = Timber(timber_instance.id + "-" + str(len(timber_instance.split_timbers)))
@@ -603,12 +634,16 @@ class Timber:
                 split_timber.master_timber = timber_instance
 
             # 引数に渡されたTimber instanceがSplit Timberである場合
+            # Todo idをきちんと正さないと、layerが複数のsplit timberでかぶってしまうバグが発生している
             else:
                 id = timber_instance.master_timber.id + "-" + str(len(timber_instance.master_timber.split_timbers))
                 split_timber = Timber(id)
 
                 # split timberにmaster timber instance情報を紐づける
                 split_timber.master_timber = self
+
+            # 中心線情報を紐づける
+            split_timber.center_line = split_center_lines[i]
 
             # timber surface情報を紐づける
             split_timber.surface = split_srf
@@ -617,7 +652,10 @@ class Timber:
             split_timber.status = timber_instance.status
 
             # Draw split surface in doc
-            split_timber.surface_guid = scriptcontext.doc.Objects.AddSurface(split_srf)  # timber surface guid
+            split_timber.surface_guid = scriptcontext.doc.Objects.AddSurface(split_srf)
+
+            # Draw center line of split timber in doc
+            split_timber.center_line_guid = scriptcontext.doc.Objects.AddCurve(split_timber.center_line)
 
             # 生成されるsplit timberが青色の場合はここで色分けを行う
             if split_timber.status == 2:
@@ -626,8 +664,11 @@ class Timber:
                 rs.ObjectColor(split_timber.surface_guid, [225, 225, 0])  # 黄色
 
             # レイヤー分け
-            temp_layer = rs.AddLayer(split_timber.id, [0, 0, 0], True, False, self.split_timbers_layer)
-            rs.ObjectLayer(split_timber.surface_guid, temp_layer)
+            parent_layer = rs.AddLayer(split_timber.id, [0, 0, 0], True, False, self.split_timbers_layer)
+            srf_layer = rs.AddLayer("surface", [0, 0, 0], True, False, parent_layer)
+            crv_layer = rs.AddLayer("center line", [0, 0, 0], True, False, parent_layer)
+            rs.ObjectLayer(split_timber.surface_guid, srf_layer)
+            rs.ObjectLayer(split_timber.center_line_guid, crv_layer)
 
             # 戻り値として格納する
             split_timber_instances.append(split_timber)
@@ -641,7 +682,7 @@ class Timber:
             else:
                 timber_instance.master_timber.split_timbers.append(split_timber)
 
-        return split_timber_instances
+        return split_timber_instances, end_of_bolt
 
     def old_split_timber_surface(self):
         for joint_pt_node in self.joint_pts_nodes:
