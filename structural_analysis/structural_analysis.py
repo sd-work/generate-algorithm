@@ -120,27 +120,27 @@ class Structure:
         self.m = (self.n + self.s + self.r) - (2 * self.k)
 
     def draw_information(self, i):
-        # Print information
-        print("###{0}###".format(i + 1))
-        print("n: {0}".format(self.n))
-        print("s: {0}".format(self.s))
-        print("r: {0}".format(self.r))
-        print("k: {0}".format(self.k))
-        print("m: {0}".format(self.m))
-
+        # Print information in console
+        # print("###{0}###".format(i + 1))
+        # print("n: {0}".format(self.n))
+        # print("s: {0}".format(self.s))
+        # print("r: {0}".format(self.r))
+        # print("k: {0}".format(self.k))
+        # print("m: {0}".format(self.m))
+        #
         # 構造体の判定を行う
         # TODO 基本はmの値で判定を行うが、支点反力数の値が0~2の時はいくらmの値が大きくても不安定とみなす？
         if self.m < 0:
-            print("不安定")
+            # print("不安定")
             self.status = 0  # 不安定
         elif self.m == 0:
-            print("静定")
+            # print("静定")
             self.status = 1  # 静定
         else:
-            print("不静定")
+            # print("不静定")
             self.status = 2  # 不静定
 
-        print("")
+        # print("")
 
         # Draw text guid in doc
         if self.text_guid:
@@ -166,12 +166,25 @@ class Structure:
     # ある部材(s)に着目し、その部材が冗長性を持っているかどうかを判定する
     def judge_redundancy_of_test_timber(self):
 
-        # すべてのEdgeに対して同じ判定処理を行う  Todo 部材数が多くなるにつれ、処理時間が長くなるのでアルゴリズムは要検討
+        # すべてのEdgeに対して同じ判定処理を行う  Todo 部材数が多くなるにつれ、処理時間が長くなる？のでアルゴリズムは要検討
         for edge in self.edges:
 
             # 判定を行うEdge
             test_edge = edge
-            print("###edge {0}###".format(test_edge.id))
+            # print("###edge {0}###".format(test_edge.id))
+
+            # test edgeが取り除かれた時のTimber自体の安定度を判定する
+            state = self.judge_stability_of_timber(edge)
+
+            if state == 0:  # Timberが不安定である場合
+                # test edgeは黄色か赤色
+                # About master timber
+                rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
+
+                # About split timber
+                rs.ObjectColor(test_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                test_edge.split_timber.status = 1  # 黄色
+                continue
 
             # 探索開始位置
             search_start_nodes = [test_edge.start_node, test_edge.end_node]
@@ -183,7 +196,7 @@ class Structure:
             for i, search_start_node in enumerate(search_start_nodes):
                 stack_list = [search_start_node]
                 history_node_list = [search_start_node]  # history listに search start nodeを格納
-                history_node_is_list = [search_start_node.id]  # node idを格納。判定に利用する
+                history_node_id_list = [search_start_node.id]  # node idを格納。判定に利用する
 
                 while stack_list:
                     # print("stack list: {0}".format(len(stack_list)))
@@ -193,27 +206,23 @@ class Structure:
 
                     for connected_node in stack_node.connected_nodes:
                         # 既にhistory listに存在するノード
-                        if connected_node.id in history_node_is_list:
+                        if connected_node.id in history_node_id_list:
                             continue
 
                         # 逆流禁止
                         if connected_node.id == stack_node.id:
                             continue
 
-                        #
+                        # test edgeの両端である場合
                         if stack_node.id in search_start_nodes_id and connected_node.id in search_start_nodes_id:
                             continue
-
-                        # # test edgeの両端である場合
-                        # if connected_node.id == search_start_nodes[0].id or connected_node.id == search_start_nodes[1].id:
-                        #     continue
 
                         # stack listにノードを追加
                         stack_list.append(connected_node)
 
                         # history listにノードを追加
                         history_node_list.append(connected_node)
-                        history_node_is_list.append(connected_node.id)
+                        history_node_id_list.append(connected_node.id)
 
                 # print("history node: {0}".format(len(history_node_list)))
                 # for node in history_node_list:
@@ -227,7 +236,7 @@ class Structure:
                 count = 0
                 # sの数はtest edgeの種類によって異なる
                 for search_node_id in search_start_nodes_id:
-                    if search_node_id in history_node_is_list:
+                    if search_node_id in history_node_id_list:
                         count += 1
 
                 # test edgeを1つの部材としてカウントするため -> 以下のhaving edgeでカウントされる？
@@ -268,16 +277,6 @@ class Structure:
                                 else:
                                     edge_list.append(having_edge)
 
-                                # if i == 0:
-                                #     check_node = search_start_nodes[1]
-                                # else:
-                                #     check_node = search_start_nodes[0]
-                                #
-                                # if having_edge.start_node.id == check_node.id or having_edge.end_node.id == check_node.id:
-                                #     continue
-                                # else:
-                                #     edge_list.append(having_edge)
-
                 # 部材数(s)
                 s += len(edge_list) + num_bolts  # ボルトも部材数としてカウント
 
@@ -290,18 +289,18 @@ class Structure:
                 # TODO 基本はmの値で判定を行うが、支点反力数の値が0~2の時はいくらmの値が大きくても不安定とみなす？
                 if n <= 2:
                     m = -1
-                
+
+                # 不静定次数を格納する
                 m_list.append(m)
 
-                print("n: {0}".format(n))
-                print("s: {0}".format(s))
-                print("r: {0}".format(r))
-                print("k: {0}".format(k))
-                print("m: {0}".format(m))
+                # print("n: {0}".format(n))
+                # print("s: {0}".format(s))
+                # print("r: {0}".format(r))
+                # print("k: {0}".format(k))
+                # print("m: {0}".format(m))
 
             # m listからtest edgeの色を判定する
             degree_of_stability = 0
-            # degree_of_instability = 0
 
             for m in m_list:
                 if m < 0:  # 不安定
@@ -314,7 +313,7 @@ class Structure:
                     degree_of_stability += 1
                     pass
 
-            print("degree_of_stability: {0}".format(degree_of_stability))
+            # print("degree_of_stability: {0}".format(degree_of_stability))
 
             """Color code edge split timber"""
             # master timberが1つの接合点しか持たない + 地面に設置していない場合、その部材は赤色
@@ -388,6 +387,78 @@ class Structure:
 
         rs.EnableRedraw(False)
 
+        # 各エッジの冗長性を判定する
         self.judge_redundancy_of_test_timber()
 
         rs.EnableRedraw(True)
+
+    # 部材単体の構造安定度を判定する
+    @staticmethod
+    def judge_stability_of_timber(test_edge):
+        """
+        :param test_edge:
+        :return: stability of timber -> -1: exception  0: instability 1: stability
+        """
+        end_nodes = []
+        end_nodes_id = []
+
+        # test edge両端のノードが接合部の場合のみ次の処理に進む
+        flag = False
+        if test_edge.start_node.structural_type == 2:
+            end_nodes.append(test_edge.start_node)
+            end_nodes_id.append(test_edge.start_node.id)
+
+            if test_edge.end_node.structural_type == 2:
+                end_nodes.append(test_edge.end_node)
+                end_nodes_id.append(test_edge.end_node.id)
+                flag = True
+
+        if not flag:
+            return -1
+
+        self_timber = test_edge.timber  # test edgeが所属するTimber instance
+
+        # 1つずつtest edgeの端部ノードを取り出す
+        for end_node in end_nodes:
+            count_joint_pts = 0
+
+            # end_node is joint pt
+            count_joint_pts += 1
+
+            # 端部ノード(接合点)が接続する隣接ノードを調べる
+            for connected_node in end_node.connected_nodes:
+
+                if connected_node.id in end_nodes_id:
+                    continue
+
+                for joint_pt_node in self_timber.joint_pts_nodes:
+                    # 接合点である場合
+                    if connected_node.id == joint_pt_node.id:
+                        count_joint_pts += 1
+
+                # 支点である場合
+                if connected_node.structural_type == 1:
+                    count_joint_pts += 1
+
+            # もしある部材が接合点を1つ以下しか持っていない場合、不安定とみなす
+            if count_joint_pts <= 1:
+                return 0
+
+        # 上記の判定に合致しない場合は安定とみなす
+        return 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
