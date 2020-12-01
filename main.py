@@ -7,7 +7,7 @@ from playground import *
 if __name__ == "__main__":
 
     # parameter
-    num_processes = 8
+    num_processes = 20
 
     # playgroundインスタンスを生成
     playground = Playground()
@@ -49,3 +49,16 @@ if __name__ == "__main__":
     for timber in playground.timbers_in_structure:
         rs.HideObject(timber.surface_guid)
         rs.HideObject(timber.center_line_guid)
+
+    # 属性User textを設定する→OpenSeesで使用するため
+    # timber edge
+    for timber in playground.timbers_in_structure:
+        rs.SetUserText(timber.center_line_guid, "joint", "3")  # joint
+
+    # split timber edge
+    for edge in playground.edges_in_structure:
+        rs.SetUserText(edge.edge_line_guid, "joint", "3")  # joint
+    
+    # bolt edge
+    for edge in playground.bolts_in_structure:
+        edge.set_user_text()  # ばねモデルの剛性を設定

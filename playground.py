@@ -102,7 +102,6 @@ class Playground:
         rs.AddLayer("node", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("edge", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("bolt", [0, 0, 0], True, False, "structure_model")
-        # rs.AddLayer("r-cycle", [0, 0, 0], True, False, "structure_model")
 
         # virtual graph layer
         # rs.AddLayer("virtual_graph", [0, 0, 0], False, False, None)
@@ -468,7 +467,9 @@ class Playground:
 
         """Generate Bolt instance"""
         for ends_bolt in bolts:
-            id = str(len(self.bolts_in_structure))
+            # id = str(len(self.bolts_in_structure))
+            id = "bolt-" + str(len(self.bolts_in_structure))
+
             bolt = Bolt(id, ends_bolt[0], ends_bolt[1])
             self.bolts_in_structure.append(bolt)
 

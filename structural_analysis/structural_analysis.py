@@ -164,17 +164,22 @@ class Structure:
         self.text_guid = rs.AddText(text, point, height, font, font_style, justification)
 
     # ある部材(s)に着目し、その部材が冗長性を持っているかどうかを判定する
-    def judge_redundancy_of_test_timber(self):
+    def judge_redundancy_of_test_timber(self, structure_edges=None):
+
+        # 構造体を構成するedge群
+        if structure_edges:
+            test_edges = structure_edges
+        else:
+            test_edges = self.edges
 
         # すべてのEdgeに対して同じ判定処理を行う  Todo 部材数が多くなるにつれ、処理時間が長くなる？のでアルゴリズムは要検討
-        for edge in self.edges:
+        for test_edge in test_edges:
 
             # 判定を行うEdge
-            test_edge = edge
             # print("###edge {0}###".format(test_edge.id))
 
             # test edgeが取り除かれた時のTimber自体の安定度を判定する
-            state = self.judge_stability_of_timber(edge)
+            state = self.judge_stability_of_timber(test_edge)
 
             if state == 0:  # Timberが不安定である場合
                 # test edgeは黄色か赤色
@@ -328,6 +333,7 @@ class Structure:
 
             # split structure1 or split structure2のいずれかが不安定である場合
             # test edgeが破壊されると、不安定な構造体が生成されてしまうので、冗長性はないと判定する
+            # Todo ただし、test edgeのいずれの端点が支点である場合は？
             if degree_of_stability == 0 or degree_of_stability == 1:
 
                 # master structureが不安定である場合
@@ -357,8 +363,13 @@ class Structure:
                     rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
 
                     # About split timber
-                    rs.ObjectColor(test_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
-                    test_edge.split_timber.status = 1  # 黄色
+                    # Todo test edgeのいずれの端点が支点である場合は青色に設定？
+                    if test_edge.start_node.structural_type == 1 or test_edge.end_node.structural_type == 1:
+                        rs.ObjectColor(test_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                        test_edge.split_timber.status = 2  # 青色
+                    else:
+                        rs.ObjectColor(test_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                        test_edge.split_timber.status = 1  # 黄色
 
             # split structure1 or split structure2のいずれも静定もしくは不静定である場合
             # test edgeが破壊されても、不安定な構造体が生成されないので、冗長性があると判定する
@@ -387,10 +398,136 @@ class Structure:
 
         rs.EnableRedraw(False)
 
-        # 各エッジの冗長性を判定する
-        self.judge_redundancy_of_test_timber()
+        # edgeを主構造体とサブ構造体に振り分ける
+        main_structure_edges, sub_structure_edges = self.regard_test_edge_as_main_structure_or_sub_structure()
+
+        # Todo ここでOpenSeasの構造解析を行う？
+
+
+        # 主構造体を構成するedgeの冗長性を判定し、色分けを行う
+        self.judge_redundancy_of_test_timber(main_structure_edges)
+
+        # サブ構造体を構成するedgeの冗長性を判定し、色分けを行う
+        for sub_edges in sub_structure_edges:
+            self.judge_redundancy_of_test_timber(sub_edges)
 
         rs.EnableRedraw(True)
+
+    # 主構造体とサブ構造体に分割する
+    def regard_test_edge_as_main_structure_or_sub_structure(self):
+
+        main_structure_edges = []
+        sub_structure_edges = []
+
+        # 削除等を行うため、edge群を複製しておく
+        test_edges = copy.copy(self.edges)
+
+        for test_edge in test_edges:
+
+            # edgeのいずれかの端部が自由端である場合->サブ構造体とみなす
+            if test_edge.start_node.structural_type == 0 or test_edge.end_node.structural_type == 0:
+                sub_structure_edges.append([test_edge])
+                continue
+
+            # master structureを分割した構造体1と構造体2の構造判定(main or sub)を格納する
+            count_main_structure = 0
+
+            # 探索開始位置
+            search_start_nodes = [test_edge.start_node, test_edge.end_node]
+            search_start_nodes_id = [test_edge.start_node.id, test_edge.end_node.id]
+
+            for i, search_start_node in enumerate(search_start_nodes):
+                stack_list = [search_start_node]  # 探索をしにいくノードを格納しておく
+                history_node_list = [search_start_node]  # 訪問済みのノードを格納
+                history_node_id_list = [search_start_node.id]  # 訪問済みのノードidを格納
+
+                while stack_list:
+
+                    # stack listの最初のノードを取得する
+                    stack_node = stack_list.pop(0)
+
+                    # stack nodeの隣接ノードを調べに行く
+                    for connected_node in stack_node.connected_nodes:
+                        # 既にhistory listに存在するノード
+                        if connected_node.id in history_node_id_list:
+                            continue
+
+                        # 逆流禁止
+                        if connected_node.id == stack_node.id:
+                            continue
+
+                        # test edgeの両端である場合
+                        if stack_node.id in search_start_nodes_id and connected_node.id in search_start_nodes_id:
+                            continue
+
+                        # stack listにノードを追加
+                        stack_list.append(connected_node)
+
+                        # history listにノードを追加
+                        history_node_list.append(connected_node)
+                        history_node_id_list.append(connected_node.id)
+
+                # 構造体1、構造体2が主構造かサブ構造かどうかを支点の数で判定する
+                is_main_structure = False
+                edge_list = []
+
+                for node in history_node_list:
+                    if node.structural_type == 1:  # 支点
+                        is_main_structure = True
+                        break
+
+                if is_main_structure:
+                    count_main_structure += 1
+                else:
+                    for node in history_node_list:
+                        if node.structural_type == 2:  # 接合点
+                            # edge情報を取得
+                            for having_edge in node.having_edges:
+                                if having_edge in edge_list:
+                                    continue
+                                else:
+                                    # having edgeの始点、終点のいずれもがtest edgeの両端と同一な場合
+                                    if having_edge.start_node.id in search_start_nodes_id and having_edge.end_node.id in search_start_nodes_id:
+                                        continue
+
+                                    # 上記に該当しない場合、edge listにhaving edgeを格納
+                                    edge_list.append(having_edge)
+
+                    # 取得したedgeはtest_edgesから削除する
+                    for edge in edge_list:
+                        # test edges
+                        if edge in test_edges:
+                            test_edges.remove(edge)
+
+                        # main structure edges
+                        if edge in main_structure_edges:
+                            main_structure_edges.remove(edge)
+
+                        # sub structure edges
+                        for index, sub_edges in enumerate(sub_structure_edges):
+                            if edge in sub_edges:
+                                del sub_structure_edges[index]
+
+                    # サブ構造体としてedge list情報を保持する
+                    edge_list.append(test_edge)  # test edgeはサブ構造体に含まれる
+                    sub_structure_edges.append(edge_list)
+
+            # count main structureからtest edgeが主構造、サブ構造どちらに属するのかを判定する
+            if count_main_structure == 2:
+                main_structure_edges.append(test_edge)
+
+        return main_structure_edges, sub_structure_edges
+
+        # print("###main###")
+        # for edge in main_structure_edges:
+        #     print(edge.id)
+        #
+        # print("###sub###")
+        # for edges in sub_structure_edges:
+        #     for edge in edges:
+        #         print(edge.id)
+        #
+        #     print("")
 
     # 部材単体の構造安定度を判定する
     @staticmethod
@@ -403,12 +540,13 @@ class Structure:
         end_nodes_id = []
 
         # test edge両端のノードが接合部の場合のみ次の処理に進む
+        # test edgeの一端が接合点、もう一端が支点の場合も次の処理に進む
         flag = False
-        if test_edge.start_node.structural_type == 2:
+        if test_edge.start_node.structural_type == 2 or test_edge.start_node.structural_type == 1:
             end_nodes.append(test_edge.start_node)
             end_nodes_id.append(test_edge.start_node.id)
 
-            if test_edge.end_node.structural_type == 2:
+            if test_edge.end_node.structural_type == 2 or test_edge.start_node.structural_type == 1:
                 end_nodes.append(test_edge.end_node)
                 end_nodes_id.append(test_edge.end_node.id)
                 flag = True
@@ -422,7 +560,10 @@ class Structure:
         for end_node in end_nodes:
             count_joint_pts = 0
 
-            # end_node is joint pt
+            # end node is joint pt, so count as a joint point
+            count_joint_pts += 1
+
+            # Todo 切断点を塑性ヒンジとして考える
             count_joint_pts += 1
 
             # 端部ノード(接合点)が接続する隣接ノードを調べる
@@ -446,19 +587,3 @@ class Structure:
 
         # 上記の判定に合致しない場合は安定とみなす
         return 1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
