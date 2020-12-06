@@ -73,13 +73,14 @@ class Optimization:
             return target_length, TargetLine(None, new_target_line)
 
     @staticmethod
-    def get_best_timber_in_database(timber_list_in_database, target_line):
+    def get_best_timber_in_database(timber_list_in_database, target_line, used_timbers_id):
         target_length = target_line.length
         select_timber = None
         min_diff_length = 10000
+
         for i, timber in enumerate(timber_list_in_database):
             # TODO ここの処理はいずれはサーバーとのやりとりの中で行う
-            if timber.is_used:
+            if timber.id in used_timbers_id:
                 continue
 
             # ターゲット曲線と木材の長さの差異を計算する
@@ -87,8 +88,11 @@ class Optimization:
 
             if diff_length < min_diff_length:
                 select_timber = timber
+
+                # update min diff length
                 min_diff_length = diff_length
 
+        # 最終的に選択されたTimberを戻り値として返す
         return select_timber
 
     @staticmethod

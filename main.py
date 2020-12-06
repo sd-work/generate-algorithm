@@ -1,15 +1,51 @@
 # coding: utf-8
 
+import os
+import sys
 import time
+import pickle
 import rhinoscriptsyntax as rs
+import Rhino
+import scriptcontext as sc
 from playground import *
 
-if __name__ == "__main__":
+# Documentの位置を指定する
+sc.doc = Rhino.RhinoDoc.ActiveDoc
 
-    # parameter
-    num_processes = 20
+# parameter
+num_processes = 2
 
-    # playgroundインスタンスを生成
+# 前回のデータを引き継ぐかどうかを判定する
+flag = rs.GetString("前回までのデータを使用しますか？ yes(y) or no(n)")
+
+# データを引き継ぐ場合
+if flag == "y" or flag == "yes":
+    # Open Object information
+    with open("test.binaryfile", "rb") as web:
+        rs.EnableRedraw(False)
+
+        # Load Playground instance
+        playground = pickle.load(web)
+
+        # Playground instanceから前回の構造体を描画するかどうかを判定する
+        flag = rs.GetString("前回までのデータを描画しますか？ yes(y) or no(n)")
+
+        if flag == "y" or flag == "yes":
+            # レイヤーを生成
+            playground.create_playground_layer()
+
+            # データを復元する
+            playground.restore_playground_instance()
+
+            # Master timberのsurface, center line guidを非表示にする
+            for timber in playground.timbers_in_structure:
+                rs.HideObject(timber.surface_guid)
+                rs.HideObject(timber.center_line_guid)
+
+        rs.EnableRedraw(True)
+
+else:
+    # playgroundインスタンスを新しく生成
     playground = Playground()
 
     # init
@@ -22,6 +58,9 @@ if __name__ == "__main__":
     # csvファイルを読み込み、木材情報を取り出す
     playground.open_csv_file()
 
+if __name__ == "__main__":
+
+    # 試行回数だけ処理を行う
     for i in range(num_processes):
         # 01. ターゲット曲線を生成する
         playground.get_target_line()
@@ -38,7 +77,6 @@ if __name__ == "__main__":
 
         # 05. グラフ表記から現状の構造体の状況を取得する
         playground.analysis_structure(i)
-        # playground.determine_status_of_structure()
 
         # reset
         playground.reset()
@@ -51,14 +89,17 @@ if __name__ == "__main__":
         rs.HideObject(timber.center_line_guid)
 
     # 属性User textを設定する→OpenSeesで使用するため
-    # timber edge
-    for timber in playground.timbers_in_structure:
-        rs.SetUserText(timber.center_line_guid, "joint", "3")  # joint
+    playground.set_user_text()
 
-    # split timber edge
-    for edge in playground.edges_in_structure:
-        rs.SetUserText(edge.edge_line_guid, "joint", "3")  # joint
-    
-    # bolt edge
-    for edge in playground.bolts_in_structure:
-        edge.set_user_text()  # ばねモデルの剛性を設定
+    # 荷重点を読み込む
+    nodal_load_pts = playground.free_end_coordinates
+
+    # Save Object
+    flag = rs.GetString("今回の生成データを保存しますか？ yes(y) or no(n)")
+
+    if flag == "y" or flag == "yes":
+        with open("test.binaryfile", "wb") as web:
+            pickle.dump(playground, web)
+
+    # Next process flag
+    toggle = True

@@ -35,12 +35,12 @@ class Timber:
         self.generate_pattern = None  # ???
         self.is_used = False  # 生成済みかどうかの判定フラグ
         self.joint_pts_info = []  # 接合点情報
+        self.split_timbers = []  # Timber Surfaceを分割したsplit timber instance群
 
         # Object(RhinoCommon)
         self.center_line = None  # 中心線
         self.surface_breps = None  # TimberのB-rep  # TODO これがないとIntersectionコマンドが使えない->Surfaceに統一したい
         self.surface = None  # Timberのサーフェス
-        self.split_timbers = []  # Timber Surfaceを分割したsplit timber instance群
 
         # Guid(In doc)
         self.text_dot_id = None
@@ -116,12 +116,59 @@ class Timber:
 
     def create_timber_layer(self):
         self.timber_layer = rs.AddLayer(self.id, [0, 0, 0], True, False, self.parent_layer)
-
         self.center_line_layer = rs.AddLayer("center line", [0, 0, 0], True, False, self.timber_layer)
         self.surface_layer = rs.AddLayer("surface", [0, 0, 0], True, False, self.timber_layer)
         self.text_id_layer = rs.AddLayer("text id", [0, 0, 0], True, False, self.timber_layer)
 
         self.split_timbers_layer = rs.AddLayer("split timber", [0, 0, 0], True, False, self.timber_layer)
+
+    def restore_timber_instance(self):
+        # layerを作成
+        self.create_timber_layer()
+
+        """Master Timber"""
+        self.generate_timber_from_instance(True)
+
+        """Split Timber"""
+        for split_timber in self.split_timbers:
+            split_timber.generate_timber_from_instance(False, self.split_timbers_layer)
+
+    def generate_timber_from_instance(self, master=True, parent_layer=None):
+        if master:
+            # Center line
+            self.center_line_guid = scriptcontext.doc.Objects.AddCurve(self.center_line)
+            rs.ObjectLayer(self.center_line_guid, self.center_line_layer)
+
+            # Surface
+            self.surface_guid = scriptcontext.doc.Objects.AddSurface(self.surface)
+            rs.ObjectLayer(self.surface_guid, self.surface_layer)
+            self.set_timber_color()  # 色分け
+
+            # dot text
+            self.text_dot_id = scriptcontext.doc.Objects.AddTextDot(self.id, self.center_line.PointAt(0))
+            rs.ObjectLayer(self.text_dot_id, self.text_id_layer)
+
+        else:
+            parent_layer = rs.AddLayer(self.id, [0, 0, 0], True, False, parent_layer)
+            srf_layer = rs.AddLayer("surface", [0, 0, 0], True, False, parent_layer)
+            crv_layer = rs.AddLayer("center line", [0, 0, 0], True, False, parent_layer)
+
+            # Center line
+            self.center_line_guid = scriptcontext.doc.Objects.AddCurve(self.center_line)
+            rs.ObjectLayer(self.center_line_guid, crv_layer)
+
+            # Surface
+            self.surface_guid = scriptcontext.doc.Objects.AddSurface(self.surface)
+            rs.ObjectLayer(self.surface_guid, srf_layer)
+            self.set_timber_color()  # 色分け
+
+    def set_timber_color(self):
+        if self.status == 0:
+            rs.ObjectColor(self.surface_guid, [223, 51, 78])  # 赤色
+        elif self.status == 1:
+            rs.ObjectColor(self.surface_guid, [225, 225, 0])  # 黄色
+        elif self.status == 2:
+            rs.ObjectColor(self.surface_guid, [157, 204, 255])  # 青色
 
     def generate_timber(self):
         # layerを作成
@@ -864,3 +911,6 @@ class Timber:
                     for split_timber in self.split_timbers:
                         rs.ObjectColor(split_timber.surface_guid, [223, 51, 78])  # 赤色
                         split_timber.status = 0  # 赤色
+
+    def set_user_text(self):
+        rs.SetUserText(self.center_line_guid, "joint", "3")  # joint

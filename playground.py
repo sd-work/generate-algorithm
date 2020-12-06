@@ -46,6 +46,9 @@ class Playground:
         self.edges_in_structure = []  # 構造体が保持するエッジ群
         self.bolts_in_structure = []  # 構造体が保持するボルト群(今回はボルトも部材の1つとしてカウントする )
 
+        # About Nodal Load
+        self.free_end_coordinates = []  # 荷重をかける座標点群
+
         # About Real graph
         # self.real_graph = Graph("real", [], [])
         # self.nodes_in_structure = []  # 構造体が保持するノード群
@@ -85,6 +88,9 @@ class Playground:
     def open_csv_file(self):
         path = r"G:\マイドライブ\2020\04_Master\2006_Generation-algorithm\RhinoPython\csv\timber_info.csv"
 
+        # 遊び場を構成している部材群を初期化する
+        # self.timbers_in_structure = []
+
         with codecs.open(path, "r", "utf-8") as csv_file:
             reader = csv.reader(csv_file)
             for info in reader:
@@ -97,7 +103,7 @@ class Playground:
         # playground layer
         rs.AddLayer("playground", [0, 0, 0], True, False, None)
 
-        # real graph layer
+        # sub layer
         rs.AddLayer("structure_model", [0, 0, 0], False, False, None)
         rs.AddLayer("node", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("edge", [0, 0, 0], True, False, "structure_model")
@@ -117,10 +123,14 @@ class Playground:
         # 取得したターゲット曲線情報から、木材を追加するための新たなターゲット曲線情報を取得
         # target_length, self.adding_target_line = Optimization.edit_adding_timber_range(target_line, num_of_joint_pt)
 
-        # 木材の参照長さに最も近似した長さの木材を検索し、取得する
-        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, self.adding_target_line)
+        # 既に生成されている木材のIdリストを作成する
+        used_timbers_id = [timber.id for timber in self.timbers_in_structure]
 
-        self.adding_timber = select_timber
+        # 木材の参照長さに最も近似した長さの木材を検索し、取得する
+        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, self.adding_target_line,
+                                                                 used_timbers_id)
+
+        self.adding_timber = select_timber  # adding timberの設定
         self.adding_timber.target_line = self.adding_target_line  # ターゲット曲線を設定
         self.adding_timber.generate_timber()  # 木材を生成
         self.adding_timbers.append(self.adding_timber)
@@ -505,3 +515,36 @@ class Playground:
         self.adding_target_line = None
 
         print("")
+
+    def set_user_text(self):
+        # timber
+        for timber in self.timbers_in_structure:
+            timber.set_user_text()
+
+        # split timber edge
+        for edge in self.edges_in_structure:
+            edge.set_user_text()  # 諸条件を設定する
+
+            # 荷重をかける座標値を取得する→自由端
+            pt = edge.get_free_end_coordinate()
+            if pt:
+                self.free_end_coordinates.append(pt)
+
+        # bolt edge
+        for bolt in self.bolts_in_structure:
+            bolt.set_user_text()  # ばねモデルの剛性を設定
+
+    def restore_playground_instance(self):
+        # About Timber
+        for timber in self.timbers_in_structure:
+            timber.restore_timber_instance()
+
+        # About structure model
+        for node in self.nodes_in_structure:
+            node.generate_node_point("node")
+
+        for edge in self.edges_in_structure:
+            edge.generate_edge_line("edge")
+
+        for bolt in self.bolts_in_structure:
+            bolt.draw_line_guid("bolt")

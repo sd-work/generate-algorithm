@@ -111,3 +111,27 @@ class Edge:
             split_timbers[1].set_having_edge([edge1])
 
             # rs.ObjectColor(edge1.split_timber.surface_guid, [223, 51, 78])  # 赤色
+
+    def set_user_text(self):
+        rs.SetUserText(self.edge_line_guid, "joint", "3")  # joint
+
+    def get_free_end_coordinate(self):
+        free_end_coordinate = None
+
+        if self.start_node.structural_type == 0:
+            free_end_coordinate = self.start_node.point  # Point3d
+
+        if self.end_node.structural_type == 0:
+            free_end_coordinate = self.end_node.point  # Point3d
+
+        return free_end_coordinate
+
+
+
+
+
+
+
+
+
+
