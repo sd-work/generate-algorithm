@@ -10,6 +10,7 @@ import math
 import random
 import sys
 import codecs
+import time
 from timber import *
 from target_line import *
 from optiimization import *
@@ -103,11 +104,13 @@ class Playground:
         # playground layer
         rs.AddLayer("playground", [0, 0, 0], True, False, None)
 
-        # sub layer
+        # structure model layer
         rs.AddLayer("structure_model", [0, 0, 0], False, False, None)
         rs.AddLayer("node", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("edge", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("bolt", [0, 0, 0], True, False, "structure_model")
+        rs.AddLayer("main", [0, 0, 0], True, False, "edge")
+        rs.AddLayer("sub", [0, 0, 0], True, False, "edge")
 
         # virtual graph layer
         # rs.AddLayer("virtual_graph", [0, 0, 0], False, False, None)
@@ -169,6 +172,7 @@ class Playground:
 
             # optimization
             flag = self_timber.minimized_joint_area(other_timber, joint_pt, unit_move_vec)
+
             if flag is False:
                 return flag
             else:
@@ -182,6 +186,7 @@ class Playground:
 
             # optimization
             flag = self_timber.bridge_joint_area(joint_pts_info)
+
             if flag is False:
                 return flag
             else:
@@ -470,14 +475,15 @@ class Playground:
             self.nodes_in_structure.extend(joint_pts_nodes)
             self.structure.set_joint_pt_nodes(joint_pts_nodes)
 
-        """Get edge in structure"""
+        """Get edge in structure"""  # ここに処理時間かかる
         bolts = Graph.detect_edges_of_structure(num_joint_pts, node1, node2, self.edges_in_structure,
                                                 joint_pts_nodes,
                                                 self.adding_timber)
 
         """Generate Bolt instance"""
+        rs.EnableRedraw(False)
+
         for ends_bolt in bolts:
-            # id = str(len(self.bolts_in_structure))
             id = "bolt-" + str(len(self.bolts_in_structure))
 
             bolt = Bolt(id, ends_bolt[0], ends_bolt[1])
@@ -487,7 +493,6 @@ class Playground:
             bolt.draw_line_guid("bolt")
 
         """Set timbers , nodes and edges to structure instance"""
-        # Todo ここは全ての部材やNodeなどを渡すのではなく、新たに生成されたオブジェクトのみを渡すように変更する
         self.structure.set_timbers(self.timbers_in_structure)
         self.structure.set_nodes(self.nodes_in_structure)
         self.structure.set_edges(self.edges_in_structure, True)
@@ -498,7 +503,21 @@ class Playground:
         self.structure.draw_information(index)  # draw information of structure in doc and console
 
         """Color code timber"""
+        # Todo ここは全ての部材を渡すのではなく、新たに生成されたオブジェクトのみを渡すように変更する
         self.structure.color_code_timbers()
+
+        # 処理時間を表示
+        # elapsed_time1 = t2 - t1
+        # elapsed_time2 = t3 - t2
+        # elapsed_time3 = t4 - t3
+        # elapsed_time4 = t5 - t4
+        # elapsed_time5 = t6 - t5
+
+        # print("get_all_edges: {0}".format(elapsed_time1))
+        # print("generate_bolt: {0}".format(elapsed_time2))
+        # print("set_var: {0}".format(elapsed_time3))
+        # print("calc_redundancy: {0}".format(elapsed_time4))
+        # print("color_code: {0}".format(elapsed_time5))
 
     def reset(self):
         # Print the information of adding timber

@@ -171,7 +171,7 @@ class Graph:
                     joint_pt_node.set_connected_nodes([node1, node2, edge_to_get.start_node, edge_to_get.end_node])
                     joint_pt_node.set_having_edge([edge1, edge2])
 
-                    # Todo record adding timber information
+                    # record adding timber information
                     joint_pt_node.set_timbers_on_contact_pt([timber])
 
                     """About timber instance"""
@@ -276,7 +276,7 @@ class Graph:
                     joint_pt_node.set_connected_nodes(
                         [node_to_get, joint_pt_node2, edge_to_get.start_node, edge_to_get.end_node])
 
-                    # Todo record adding timber information
+                    # record adding timber information
                     joint_pt_node.set_timbers_on_contact_pt([timber])
 
                     """About timber instance | joint point node | structure instance"""
@@ -387,7 +387,7 @@ class Graph:
                 """About joint point node"""
                 joint_pt_node.set_having_edge([edge1, edge2])
 
-                # Todo record adding timber information
+                # record adding timber information
                 joint_pt_node.set_timbers_on_contact_pt([already_generated_timber])
 
                 """About timber instance"""
@@ -424,8 +424,6 @@ class Graph:
 
                 """Maintain ends point of bolt information"""
                 bolts.append(ends_of_bolt)
-
-        rs.EnableRedraw(True)
 
         return bolts
 

@@ -41,15 +41,16 @@ class Edge:
         elif layer_name == "v-edge":
             self.layer = rs.AddLayer(str(self.id), [0, 0, 255], True, False, layer_name)
         else:
-            self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
+            pass
+            # self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
 
         self.edge_line_guid = scriptcontext.doc.Objects.AddCurve(self.edge_line)
-        rs.ObjectLayer(self.edge_line_guid, self.layer)
+        # rs.ObjectLayer(self.edge_line_guid, self.layer)
 
     def delete_guid(self):
         rs.DeleteObject(self.edge_line_guid)
-        rs.DeleteLayer(self.layer)
-        
+        # rs.DeleteLayer(self.layer)
+
         self.edge_line_guid = None
         self.layer = None
 
@@ -113,7 +114,8 @@ class Edge:
             # rs.ObjectColor(edge1.split_timber.surface_guid, [223, 51, 78])  # 赤色
 
     def set_user_text(self):
-        rs.SetUserText(self.edge_line_guid, "joint", "3")  # joint
+        if self.edge_line_guid:
+            rs.SetUserText(self.edge_line_guid, "joint", "3")  # joint
 
     def get_free_end_coordinate(self):
         free_end_coordinate = None
@@ -125,13 +127,3 @@ class Edge:
             free_end_coordinate = self.end_node.point  # Point3d
 
         return free_end_coordinate
-
-
-
-
-
-
-
-
-
-
