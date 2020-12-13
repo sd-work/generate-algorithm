@@ -79,7 +79,7 @@ class Timber:
 
         for i in range(split_num):
             section_curves_info = [random.randint(-5, 5), random.randint(-5, 5), i * unit_center_point_z]  # 中心点
-            radius_section_crv = random.randint(30, 40)  # 半径
+            radius_section_crv = random.randint(35, 55)  # 半径
             section_curves_info.append(radius_section_crv)
             self.section_curves_info.append(section_curves_info)
 
@@ -806,6 +806,66 @@ class Timber:
             #
             # # debug
             # # rc = [scriptcontext.doc.Objects.AddBrep(brep) for brep in cutter_circle_srf]
+
+    def get_section_of_timber(self, test_point, origin_vec):
+
+        # Get closest point on timber surface from test point which is joint point node
+        timber_srf = self.surface  # This is about Timber surface
+
+        domain_u = timber_srf.Domain(0)  # 高さ方向
+        domain_v = timber_srf.Domain(1)  # 断面方向
+
+        split_num = 10
+        if domain_v[0] < 0:
+            unit_domain_v = ((domain_v[1] - domain_v[0]) / split_num) * -1
+        else:
+            unit_domain_v = (domain_v[1] - domain_v[0]) / split_num
+
+        # timber surface上の1点を取得する
+        to_pt = Point3d.Add(test_point, origin_vec)
+
+        temp_line = Line(test_point, to_pt)
+        temp_line = temp_line.ToNurbsCurve()
+
+        events = Intersect.Intersection.CurveSurface(temp_line, timber_srf, 0.001, 0.001)
+
+        for event in events:
+            test_point = event.PointA
+
+        rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
+
+        # Generate cutter surface
+        pt1 = timber_srf.PointAt(u_parameter, unit_domain_v * 0)
+        pt2 = timber_srf.PointAt(u_parameter, unit_domain_v * 2)
+
+        vec1 = Vector3d(pt1 - test_point)
+        vec2 = Vector3d(pt2 - test_point)
+
+        cross_vec = Vector3d.CrossProduct(vec1, vec2)
+
+        # define plane by center point and normal vector
+        plane = Plane(test_point, cross_vec)
+
+        # cutter circle surface
+        circle = Rhino.Geometry.Circle(plane, 100)
+        circle = circle.ToNurbsCurve()
+
+        tolerance = scriptcontext.doc.ModelAbsoluteTolerance
+        cutter_circles = Rhino.Geometry.Brep.CreatePlanarBreps(circle, tolerance)
+
+        section_curve = None
+        for cutter_circle in cutter_circles:
+            rc, curves, points = Intersect.Intersection.BrepSurface(cutter_circle, self.surface, 0.001)
+
+            if curves:
+                section_curve = curves[0]
+
+        return section_curve
+
+
+
+
+
 
     def delete_timber_guid(self):
         if self.text_dot_id:

@@ -39,6 +39,13 @@ class Structure:
         self.text_guid = None
         self.gl_line = None
 
+    def set_main_sub_edges(self, main_structure_edges, sub_structure_edges):
+        self.main_edges = []  # init
+        self.sub_edges = []  # init
+
+        self.main_edges = main_structure_edges
+        self.sub_edges = sub_structure_edges
+
     def set_timbers(self, timbers):
         for timber in timbers:
             if timber in self.timbers:
@@ -429,24 +436,35 @@ class Structure:
         # split structure1 or split structure2のいずれも静定もしくは不静定である場合
         # test edgeが破壊されても、不安定な構造体が生成されないので、冗長性があると判定する
         elif degree_of_stability == 2:
-            # Todo test edgeが保持するmaster timberの構造状態を確認する
-            # 01. この時、split structure1, 2がいずれも安定構造ではあるが、部材単体を見ると不安定である場合
-            # test.edge.split timberは赤色 or 黄色になる
+            # master structureが不安定である場合
+            if self.status == 0:
+                # About master timber
+                rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
 
-            # pattern1 -> test edge上のある点でsplitすることで生成されるsplit timberが1つの接合点しか持たない場合
-            # # Calculate uv parameter about timber surface
-            # rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
+                # About split timber
+                rs.ObjectColor(test_edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                test_edge.split_timber.status = 0  # 赤色
 
-            # Split timber surface
-            # split_srf_list = timber_srf.Split(0, u_parameter)
-            #
-            # 02. 部材単体も安定である場合
-            # test.edge.split timberは青色 -> 冗長性があるedgeとしてみなす
-            # About master timber
+            # master structureが安定構造である場合
+            elif self.status == 1 or self.status == 2:
+                # Todo test edgeが保持するmaster timberの構造状態を確認する
+                # 01. この時、split structure1, 2がいずれも安定構造ではあるが、部材単体を見ると不安定である場合
+                # test.edge.split timberは赤色 or 黄色になる
 
-            # About split timber
-            rs.ObjectColor(test_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
-            test_edge.split_timber.status = 2  # 青色
+                # pattern1 -> test edge上のある点でsplitすることで生成されるsplit timberが1つの接合点しか持たない場合
+                # # Calculate uv parameter about timber surface
+                # rc, u_parameter, v_parameter = Surface.ClosestPoint(timber_srf, test_point)
+
+                # Split timber surface
+                # split_srf_list = timber_srf.Split(0, u_parameter)
+                #
+                # 02. 部材単体も安定である場合
+                # test.edge.split timberは青色 -> 冗長性があるedgeとしてみなす
+                # About master timber
+
+                # About split timber
+                rs.ObjectColor(test_edge.split_timber.surface_guid, [157, 204, 255])  # 青色
+                test_edge.split_timber.status = 2  # 青色
 
     # 部材の色分けを行う(全体の判定)
     def color_code_timbers(self):
@@ -457,11 +475,10 @@ class Structure:
         main_structure_edges, sub_structure_edges = self.regard_test_edge_as_main_structure_or_sub_structure()
 
         # main, sub edgesをインスタンス変数として保存しておく
-        self.main_edges = main_structure_edges
-        self.sub_edges = sub_structure_edges
+        self.set_main_sub_edges(main_structure_edges, sub_structure_edges)
 
-        # Todo ここでOpenSeasの構造解析を行う？
-        #
+        # 主構造のedgeを2分割にし、それをあるlayerに格納しておく
+        # self.split_main_edge()
 
         # 主構造体を構成するedgeの冗長性を判定し、色分けを行う
         self.judge_redundancy_of_test_timber(main_structure_edges)
@@ -469,6 +486,12 @@ class Structure:
         # サブ構造体を構成するedgeの冗長性を判定し、色分けを行う
         for sub_edges in sub_structure_edges:
             self.judge_redundancy_of_test_timber(sub_edges)
+
+        # Todo ここでOpenSeasの構造解析を行う？
+        # command = "-_Grasshopper _E _S _D _O \"{0}\" _Enter"
+        # location = "G:\\マイドライブ\\2020\\04_Master\\2006_Generation-algorithm\\StructualAnalysis\\201208\\5timbers\\timbers.gh"
+        # everything = command.format(location)
+        # rs.Command(everything)
 
         # 処理時間を表示
         # elapsed_time1 = t2 - t1
@@ -478,6 +501,26 @@ class Structure:
         # print("elapsed time_main_sub: {0}".format(elapsed_time1))
         # print("elapsed time_main_structure: {0}".format(elapsed_time2))
         # print("elapsed time_sub: {0}".format(elapsed_time3))
+
+    def split_main_edge(self):
+
+        # objectをlayerに設定する
+        if rs.IsLayer("split_edges"):
+            rs.DeleteLayer("split_edges")
+
+        layer = rs.AddLayer("split_edges", [0, 0, 0], True, False, "structure_model")
+
+        for main_edge in self.main_edges:
+            split_edges = main_edge.divide_edge_two_edge()
+            for split_edge in split_edges:
+                edge_guid = scriptcontext.doc.Objects.AddCurve(split_edge)
+
+                # set layer
+                rs.ObjectLayer(edge_guid, layer)
+
+                # user textの設定を行う
+                rs.SetUserText(edge_guid, "joint", "3")  # joint
+                rs.SetUserText(edge_guid, "sec", str(main_edge.section_id))  # section id
 
     # 主構造体とサブ構造体に分割する
     def regard_test_edge_as_main_structure_or_sub_structure(self):

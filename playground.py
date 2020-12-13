@@ -11,6 +11,7 @@ import random
 import sys
 import codecs
 import time
+import csv
 from timber import *
 from target_line import *
 from optiimization import *
@@ -45,10 +46,17 @@ class Playground:
         self.timbers_in_structure = []  # 遊び場を構成している部材
         self.nodes_in_structure = []  # 構造体が保持するノード群
         self.edges_in_structure = []  # 構造体が保持するエッジ群
+        self.main_edges_in_structure = []  # 構造体が保持する主構造のエッジ群
+        self.sub_edges_in_structure = []  # 構造体が保持するサブ構造のエッジ群
         self.bolts_in_structure = []  # 構造体が保持するボルト群(今回はボルトも部材の1つとしてカウントする )
 
         # About Nodal Load
         self.free_end_coordinates = []  # 荷重をかける座標点群
+        self.support_pt_coordinates = []  # サブ構造の支点座標群
+        self.mid_pt_coordinates = []  # 主構造のedgeの中心点座標群
+
+        # About section list
+        self.edge_section_list = []  # 各edgeのsecのindex番号を格納
 
         # About Real graph
         # self.real_graph = Graph("real", [], [])
@@ -542,28 +550,75 @@ class Playground:
 
         # split timber edge
         for edge in self.edges_in_structure:
-            edge.set_user_text()  # 諸条件を設定する
+            # edge.set_user_text()  # 諸条件を設定する->これはCSVへの書き込みの際に行う
 
             # 荷重をかける座標値を取得する→自由端
-            pt = edge.get_free_end_coordinate()
-            if pt:
-                self.free_end_coordinates.append(pt)
+            nodal_pt, support_pt = edge.get_free_end_coordinate()
+            if nodal_pt:
+                self.free_end_coordinates.append(nodal_pt)
+            if support_pt:
+                self.support_pt_coordinates.append(support_pt)
 
         # bolt edge
         for bolt in self.bolts_in_structure:
             bolt.set_user_text()  # ばねモデルの剛性を設定
 
+        # 主構造のedgeを2つのedgeに分割する
+        self.structure.split_main_edge()
+
+        # main sub structure
+        self.main_edges_in_structure = self.structure.main_edges
+        self.sub_edges_in_structure = self.structure.sub_edges
+
+        for main_edge in self.main_edges_in_structure:
+            self.mid_pt_coordinates.append(main_edge.divided_pt)
+
     def restore_playground_instance(self):
         # About Timber
         for timber in self.timbers_in_structure:
-            timber.restore_timber_instance()
+            timber.restore_timber_instance()  # draw
+            timber.set_user_text()  # set user text
 
         # About structure model
         for node in self.nodes_in_structure:
-            node.generate_node_point("node")
+            node.generate_node_point("node")  # draw
 
         for edge in self.edges_in_structure:
-            edge.generate_edge_line("edge")
+            edge.generate_edge_line("edge")  # draw
+            edge.set_user_text()
+
+        self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
 
         for bolt in self.bolts_in_structure:
             bolt.draw_line_guid("bolt")
+            bolt.set_user_text()  # ばねモデルの剛性を設定
+
+    def create_section_list(self):
+
+        self.edge_section_list = []  # init
+
+        with open("section_list\\section_list.csv", "w") as f:
+            # headerの設定
+            fieldnames = ["No.", "S", "P1", "P2", "P3", "P4"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")  # 書き込みの空白を削除する
+            writer.writeheader()
+
+            # データの書き込み
+            for edge in self.edges_in_structure:
+                sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
+
+                # edgeにsection idを設定
+                edge.section_id = sec_id  # set section id
+                self.edge_section_list.append(sec_id)
+
+                # 属性ユーザーテキストに設定
+                edge.set_user_text()  # joint, secを設定
+
+                # 断面直径を計算する
+                edge.calc_diameter_of_section()
+
+                # 断面情報をcsvに書き込む
+                writer.writerow(
+                    {"No.": edge.section_id, "S": "2", "P1": edge.diameter_of_section, "P2": "0", "P3": "0", "P4": "0"})
+
+
