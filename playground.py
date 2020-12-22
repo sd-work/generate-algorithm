@@ -563,7 +563,7 @@ class Playground:
         for bolt in self.bolts_in_structure:
             bolt.set_user_text()  # ばねモデルの剛性を設定
 
-        # 主構造のedgeを2つのedgeに分割する
+        # 主構造のedgeを2つのedgeに分割する->中央荷重をかけるため
         self.structure.split_main_edge()
 
         # main sub structure
@@ -588,6 +588,8 @@ class Playground:
             edge.set_user_text()
 
         self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
+
+        self.structure.split_main_edge()  # split main edges
 
         for bolt in self.bolts_in_structure:
             bolt.draw_line_guid("bolt")
@@ -618,7 +620,8 @@ class Playground:
                 edge.calc_diameter_of_section()
 
                 # 断面情報をcsvに書き込む
+                diameter = edge.diameter_of_section  # 断面直径
                 writer.writerow(
-                    {"No.": edge.section_id, "S": "2", "P1": edge.diameter_of_section, "P2": "0", "P3": "0", "P4": "0"})
+                    {"No.": edge.section_id, "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})
 
 

@@ -62,7 +62,7 @@ class Timber:
         self.is_generated_from_GL = False  # TimberがGLから生成されているかを判定するフラグ
         self.rigid_joints = []  # Timberが保持する仮想剛接合点(三角形=virtual node)情報
         self.connected_timbers = []  # Timberが接続している木材情報
-        self.status = -1  # -1/ init 0/red 1/yellow 2/blue
+        self.status = -1  # -1/ init 0/red 1/yellow 2/blue 4/orange
 
         # temp parameter
         self.section_curves_info = []
@@ -861,11 +861,6 @@ class Timber:
                 section_curve = curves[0]
 
         return section_curve
-
-
-
-
-
 
     def delete_timber_guid(self):
         if self.text_dot_id:

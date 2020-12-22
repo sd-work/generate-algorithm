@@ -108,10 +108,19 @@ class Structure:
 
         # sub structure
         for edges in self.sub_edges:
-            for edge in edges:
-                layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "sub")
-                rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
-                rs.ObjectColor(edge.edge_line_guid, [255, 255, 0])  # yellow
+            # 01. 片持ち群
+            if len(edges) >= 2:
+                for edge in edges:
+                    layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "sub")
+                    rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
+                    rs.ObjectColor(edge.edge_line_guid, [255, 140, 0])  # orange
+
+            # 02. 片持ち
+            else:
+                for edge in edges:
+                    layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "sub")
+                    rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
+                    rs.ObjectColor(edge.edge_line_guid, [255, 255, 0])  # yellow
 
         # Delete old layer
         # main sub layer内のempty layerを削除する
@@ -204,9 +213,7 @@ class Structure:
         self.text_guid = rs.AddText(text, point, height, font, font_style, justification)
 
     # ある部材(s)に着目し、その部材が冗長性を持っているかどうかを判定する
-    def judge_redundancy_of_test_timber(self, structure_edges=None):
-
-        rs.EnableRedraw(False)
+    def judge_redundancy_of_test_timber(self, structure_edges=None, edge_type=None):
 
         # 構造体を構成するedge群
         if structure_edges:
@@ -214,39 +221,69 @@ class Structure:
         else:
             test_edges = self.edges
 
-        # すべてのEdgeに対して同じ判定処理を行う  Todo 部材数が多くなるにつれ、処理時間が長くなる？のでアルゴリズムは要検討
-        for test_edge in test_edges:
+        # 主構造
+        if edge_type == "main":
 
-            # 判定を行うEdge
-            # print("###edge {0}###".format(test_edge.id))
+            # すべてのEdgeに対して同じ判定処理を行う
+            for test_edge in test_edges:
 
-            # test edgeが取り除かれた時のTimber自体の安定度を判定する
-            state = self.judge_stability_of_timber(test_edge)
+                # test edgeが取り除かれた時のTimber自体の安定度を判定する
+                state = self.judge_stability_of_timber(test_edge)
 
-            """test edge(split timber)が不安定 or キャンチである場合"""
-            if state == 0:
+                """test edge(split timber)が不安定 or キャンチである場合"""
+                if state == 0:
+                    # master timberが1つの接合点しか持たない + 地面に設置していない場合、その部材は赤色
+                    if len(test_edge.timber.joint_pts_nodes) <= 1 and (not test_edge.timber.is_generated_from_GL):
+                        # About master timber
+                        rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
+
+                        # About split timber
+                        rs.ObjectColor(test_edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                        test_edge.split_timber.status = 0  # 赤色
+                        continue
+
+                    else:
+                        # test edgeは黄色
+                        # About master timber
+                        rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
+
+                        # About split timber
+                        rs.ObjectColor(test_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                        test_edge.split_timber.status = 1  # 黄色
+                        continue
+
+                """main structureの場合"""
+                self.set_timber_color(test_edge, degree_of_stability=2)
+
+        # サブ構造
+        elif edge_type == "sub":
+
+            for sub_edge in test_edges:
+                """sub edge(split timber)が不安定である場合"""
                 # master timberが1つの接合点しか持たない + 地面に設置していない場合、その部材は赤色
-                if len(test_edge.timber.joint_pts_nodes) <= 1 and (not test_edge.timber.is_generated_from_GL):
+                if len(sub_edge.timber.joint_pts_nodes) <= 1 and (not sub_edge.timber.is_generated_from_GL):
                     # About master timber
-                    rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
+                    rs.ObjectColor(sub_edge.timber.surface_guid, [0, 0, 0])  # default color
 
                     # About split timber
-                    rs.ObjectColor(test_edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
-                    test_edge.split_timber.status = 0  # 赤色
-                    continue
+                    rs.ObjectColor(sub_edge.split_timber.surface_guid, [223, 51, 78])  # 赤色
+                    sub_edge.split_timber.status = 0  # 赤色
 
                 else:
-                    # test edgeは黄色
+                    # 片持ち群の場合はオレンジ、片持ちの場合は黄色
                     # About master timber
-                    rs.ObjectColor(test_edge.timber.surface_guid, [0, 0, 0])  # default color
+                    rs.ObjectColor(sub_edge.timber.surface_guid, [0, 0, 0])  # default color
 
                     # About split timber
-                    rs.ObjectColor(test_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
-                    test_edge.split_timber.status = 1  # 黄色
-                    continue
+                    # 片持ち群
+                    if len(test_edges) >= 2:
+                        rs.ObjectColor(sub_edge.split_timber.surface_guid, [255, 165, 0])  # オレンジ
+                        sub_edge.split_timber.status = 4  # オレンジ
 
-            """main structureの場合"""
-            self.set_timber_color(test_edge, degree_of_stability=2)
+                    # 片持ち
+                    else:
+                        rs.ObjectColor(sub_edge.split_timber.surface_guid, [225, 225, 0])  # 黄色
+                        sub_edge.split_timber.status = 1  # 黄色
 
             # """edgeのいずれの端部も自由端ではない場合、次の処理に進む"""
             # # 探索開始位置
@@ -477,15 +514,12 @@ class Structure:
         # main, sub edgesをインスタンス変数として保存しておく
         self.set_main_sub_edges(main_structure_edges, sub_structure_edges)
 
-        # 主構造のedgeを2分割にし、それをあるlayerに格納しておく
-        # self.split_main_edge()
-
         # 主構造体を構成するedgeの冗長性を判定し、色分けを行う
-        self.judge_redundancy_of_test_timber(main_structure_edges)
+        self.judge_redundancy_of_test_timber(main_structure_edges, "main")
 
         # サブ構造体を構成するedgeの冗長性を判定し、色分けを行う
         for sub_edges in sub_structure_edges:
-            self.judge_redundancy_of_test_timber(sub_edges)
+            self.judge_redundancy_of_test_timber(sub_edges, "sub")
 
         # Todo ここでOpenSeasの構造解析を行う？
         # command = "-_Grasshopper _E _S _D _O \"{0}\" _Enter"

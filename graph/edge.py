@@ -92,6 +92,8 @@ class Edge:
 
         diameter_list = []
         for crv in section_list:
+            # Todo ここの断面直径を取得する方法は変更する
+            # Todo 円周長さから求めるのではなく、断面曲線から直接長さを取得する
             crv_length = crv.GetLength()
             diameter = crv_length / math.pi
             diameter_list.append(diameter)
@@ -99,6 +101,7 @@ class Edge:
         # 直径情報を保存する
         self.diameter_of_section = int(sum(diameter_list) / len(diameter_list))
         self.diameter_of_section = self.diameter_of_section * (10 ** -3)  # mに変換する
+        self.diameter_of_section = round(self.diameter_of_section, 3)  # 小数点以下3桁(小数点第四位を四捨五入)
 
     @staticmethod
     def check_edge_in_edge_list(node1, node2, edge_list):

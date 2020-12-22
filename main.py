@@ -13,7 +13,7 @@ from playground import *
 sc.doc = Rhino.RhinoDoc.ActiveDoc
 
 # parameter
-num_processes = 2
+num_processes = 1
 
 
 # 前回のデータを引き継ぐかどうかを判定する
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         # 05. グラフ表記から現状の構造体の状況を取得する
         playground.analysis_structure(i)
 
-        # 06. main, sub layerにedgeを振り分ける
+        # 06. main, sub layerにedgeを振り分け、色分けをする
         playground.structure.set_edges_to_main_sub_layer()
 
         # reset
