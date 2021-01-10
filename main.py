@@ -13,8 +13,8 @@ from playground import *
 sc.doc = Rhino.RhinoDoc.ActiveDoc
 
 # parameter
-num_processes = 1
-
+num_processes = 2
+split_num = 10  # 1つのedgeを何分割のsegmented edgeにするか
 
 # 前回のデータを引き継ぐかどうかを判定する
 flag = rs.GetString("前回までのデータを使用しますか？ yes(y) or no(n)")
@@ -36,7 +36,7 @@ if flag == "y" or flag == "yes":
             # レイヤーを生成
             playground.create_playground_layer()
 
-            # データを復元する
+            # Todo データを復元する
             playground.restore_playground_instance()
 
             # Master timberのsurface, center line guidを非表示にする
@@ -62,8 +62,6 @@ else:
 
 if __name__ == "__main__":
 
-    global t1, t2, t3, t4, t5, t6
-
     # 試行回数だけ処理を行う
     for i in range(num_processes):
         rs.EnableRedraw(True)
@@ -87,7 +85,7 @@ if __name__ == "__main__":
         playground.analysis_structure(i)
 
         # 06. main, sub layerにedgeを振り分け、色分けをする
-        playground.structure.set_edges_to_main_sub_layer()
+        playground.structure.set_edges_to_main_sub_layer(split_num)
 
         # reset
         playground.reset()
@@ -100,18 +98,19 @@ if __name__ == "__main__":
         rs.HideObject(timber.center_line_guid)
 
     # 08. section listを作成し、csv形式で保存する→OpenSeesで使用するため
-    playground.create_section_list()
+    playground.create_section_csv_list()
 
-    # 09. 属性User textを設定する→OpenSeesで使用するため
+    # 09. 構造解析で使用する荷重情報を取得する→OpenSeesで使用するため
+    playground.get_nodal_load_info(split_num)
+
+    # 10. 属性User textを設定する→OpenSeesで使用するため
     playground.set_user_text()
 
     rs.EnableRedraw(True)
 
-    # 10. Save Object instance
+    # 11. Save Object instance
     flag = rs.GetString("今回の生成データを保存しますか？ yes(y) or no(n)")
     if flag == "y" or flag == "yes":
         with open("binary_file\\playground.binaryfile", "wb") as web:
             pickle.dump(playground, web)
 
-    # Next process flag
-    # next_toggle = True

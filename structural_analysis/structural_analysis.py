@@ -98,32 +98,152 @@ class Structure:
             else:
                 self.joint_pts_nodes.append(joint_pt_node)
 
-    def set_edges_to_main_sub_layer(self):
+    def set_edges_to_main_sub_layer(self, split_num=10):
 
         # main structure
-        for edge in self.main_edges:
-            layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "main")
-            rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
-            rs.ObjectColor(edge.edge_line_guid, [0, 0, 255])  # Blue
+        for master_edge in self.main_edges:
+            # master main edge
+            master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "main")
+            rs.ObjectLayer(master_edge.edge_line_guid, master_layer)  # set object layer
+            rs.ObjectColor(master_edge.edge_line_guid, [0, 0, 255])  # Blue
+
+            # 既に分割済みのmaster edgeは処理しない
+            if master_edge.split_edges_guid:
+                continue
+            else:
+                # 01. split edge(timber center line)
+                master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "main_split")
+
+                if master_edge.split_edges:
+                    for split_edge in master_edge.split_edges:
+                        split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                        master_edge.split_edges_guid.append(split_edge_guid)
+
+                    for split_edge in master_edge.split_edges_master_edge:
+                        split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                        master_edge.split_edges_guid_master_edge.append(split_edge_guid)
+
+                else:
+                    # master edgeを分割し、その分割線(split edge guid)を取得する
+                    master_edge.split_master_edge_to_segmented_edges(split_num)
+
+                # layerとcolorを割り当てる
+                for i, split_edge_guid in enumerate(master_edge.split_edges_guid):
+                    layer_name = master_edge.id + "-" + str(i)
+                    layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                    rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                    rs.ObjectColor(split_edge_guid, [0, 0, 255])  # Blue
+
+                # 02. split edge(master frame edge)
+                master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "master_main_split")
+
+                # layerとcolorを割り当てる
+                for i, split_edge_guid in enumerate(master_edge.split_edges_guid_master_edge):
+                    layer_name = "m-" + str(master_edge.id) + "-" + str(i)
+                    layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                    rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                    rs.ObjectColor(split_edge_guid, [0, 0, 255])  # Blue
+
+                # 03. divided edge(master frame edge)
+                master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "split_main")
+
+                for i, divided_edge_guid in enumerate(master_edge.divided_two_edges_guid):
+                    layer_name = "s" + "-" + str(master_edge.id) + "-" + str(i)
+                    layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+
+                    rs.ObjectLayer(divided_edge_guid, layer)  # set object layer
+                    rs.ObjectColor(divided_edge_guid, [0, 0, 255])  # Blue
 
         # sub structure
         for edges in self.sub_edges:
             # 01. 片持ち群
             if len(edges) >= 2:
-                for edge in edges:
-                    layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "sub")
-                    rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
-                    rs.ObjectColor(edge.edge_line_guid, [255, 140, 0])  # orange
+                for master_edge in edges:
+                    master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "sub")
+                    rs.ObjectLayer(master_edge.edge_line_guid, master_layer)  # set object layer
+                    rs.ObjectColor(master_edge.edge_line_guid, [255, 140, 0])  # orange
+
+                    # 既に分割済みのmaster edge(timber center line)は処理しない
+                    if master_edge.split_edges_guid:
+                        continue
+                    else:
+                        # 01. split edge(timber center line)
+                        master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "sub_split")
+
+                        if master_edge.split_edges:
+                            for split_edge in master_edge.split_edges:
+                                split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                                master_edge.split_edges_guid.append(split_edge_guid)
+
+                            for split_edge in master_edge.split_edges_master_edge:
+                                split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                                master_edge.split_edges_guid_master_edge.append(split_edge_guid)
+
+                        else:
+                            # master edgeを分割し、その分割線(split edge guid)を取得する
+                            master_edge.split_master_edge_to_segmented_edges(split_num)
+
+                        for i, split_edge_guid in enumerate(master_edge.split_edges_guid):
+                            layer_name = master_edge.id + "-" + str(i)
+                            layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                            rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                            rs.ObjectColor(split_edge_guid, [255, 140, 0])  # orange
+
+                        # 02. split edge(master frame edge)
+                        master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "master_sub_split")
+
+                        # layerとcolorを割り当てる
+                        for i, split_edge_guid in enumerate(master_edge.split_edges_guid_master_edge):
+                            layer_name = "m-" + str(master_edge.id) + "-" + str(i)
+                            layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                            rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                            rs.ObjectColor(split_edge_guid, [255, 140, 0])  # orange
 
             # 02. 片持ち
             else:
-                for edge in edges:
-                    layer = rs.AddLayer(str(edge.id), [0, 0, 0], True, False, "sub")
-                    rs.ObjectLayer(edge.edge_line_guid, layer)  # set object layer
-                    rs.ObjectColor(edge.edge_line_guid, [255, 255, 0])  # yellow
+                for master_edge in edges:
+                    master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "sub")
+                    rs.ObjectLayer(master_edge.edge_line_guid, master_layer)  # set object layer
+                    rs.ObjectColor(master_edge.edge_line_guid, [255, 255, 0])  # yellow
+
+                    # 既に分割済みのmaster edge(timber center line)は処理しない
+                    if master_edge.split_edges_guid:
+                        continue
+                    else:
+                        # 01. split edge(timber center line)
+                        master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "sub_split")
+
+                        if master_edge.split_edges:
+                            for split_edge in master_edge.split_edges:
+                                split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                                master_edge.split_edges_guid.append(split_edge_guid)
+
+                            for split_edge in master_edge.split_edges_master_edge:
+                                split_edge_guid = scriptcontext.doc.Objects.AddLine(split_edge)
+                                master_edge.split_edges_guid_master_edge.append(split_edge_guid)
+
+                        else:
+                            # master edgeを分割し、その分割線(split edge guid)を取得する
+                            master_edge.split_master_edge_to_segmented_edges(split_num)
+
+                        for i, split_edge_guid in enumerate(master_edge.split_edges_guid):
+                            layer_name = master_edge.id + "-" + str(i)
+                            layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                            rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                            rs.ObjectColor(split_edge_guid, [255, 255, 0])  # yellow
+
+                        # 02. split edge(master frame edge)
+                        master_layer = rs.AddLayer(str(master_edge.id), [0, 0, 0], True, False, "master_sub_split")
+
+                        # layerとcolorを割り当てる
+                        for i, split_edge_guid in enumerate(master_edge.split_edges_guid_master_edge):
+                            layer_name = "m-" + str(master_edge.id) + "-" + str(i)
+                            layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_layer)
+                            rs.ObjectLayer(split_edge_guid, layer)  # set object layer
+                            rs.ObjectColor(split_edge_guid, [255, 255, 0])  # yellow
 
         # Delete old layer
-        # main sub layer内のempty layerを削除する
+        # main layer内のempty layerを削除する
         parent = rs.LayerChildren("main")
         if parent:
             for child in parent:
@@ -132,6 +252,34 @@ class Structure:
 
         # sub layer内のempty layerを削除する
         parent = rs.LayerChildren("sub")
+        if parent:
+            for child in parent:
+                if rs.IsLayerEmpty(child):
+                    rs.DeleteLayer(child)
+
+        # main split layer内のempty layerを削除する
+        parent = rs.LayerChildren("main_split")
+        if parent:
+            for child in parent:
+                if rs.IsLayerEmpty(child):
+                    rs.DeleteLayer(child)
+
+        # sub split layer内のempty layerを削除する
+        parent = rs.LayerChildren("sub_split")
+        if parent:
+            for child in parent:
+                if rs.IsLayerEmpty(child):
+                    rs.DeleteLayer(child)
+
+        # master_main_split layer内のempty layerを削除する
+        parent = rs.LayerChildren("master_main_split")
+        if parent:
+            for child in parent:
+                if rs.IsLayerEmpty(child):
+                    rs.DeleteLayer(child)
+
+        # master_sub_split layer内のempty layerを削除する
+        parent = rs.LayerChildren("master_sub_split")
         if parent:
             for child in parent:
                 if rs.IsLayerEmpty(child):
@@ -506,8 +654,6 @@ class Structure:
     # 部材の色分けを行う(全体の判定)
     def color_code_timbers(self):
 
-        rs.EnableRedraw(False)
-
         # edgeを主構造体とサブ構造体に振り分ける
         main_structure_edges, sub_structure_edges = self.regard_test_edge_as_main_structure_or_sub_structure()
 
@@ -527,22 +673,7 @@ class Structure:
         # everything = command.format(location)
         # rs.Command(everything)
 
-        # 処理時間を表示
-        # elapsed_time1 = t2 - t1
-        # elapsed_time2 = t3 - t2
-        # elapsed_time3 = t4 - t3
-        #
-        # print("elapsed time_main_sub: {0}".format(elapsed_time1))
-        # print("elapsed time_main_structure: {0}".format(elapsed_time2))
-        # print("elapsed time_sub: {0}".format(elapsed_time3))
-
-    def split_main_edge(self):
-
-        # objectをlayerに設定する
-        if rs.IsLayer("split_edges"):
-            rs.DeleteLayer("split_edges")
-
-        layer = rs.AddLayer("split_edges", [0, 0, 0], True, False, "structure_model")
+    def split_master_edge(self, layer=None):
 
         for main_edge in self.main_edges:
             split_edges = main_edge.divide_edge_two_edge()

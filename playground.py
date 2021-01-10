@@ -50,10 +50,14 @@ class Playground:
         self.sub_edges_in_structure = []  # 構造体が保持するサブ構造のエッジ群
         self.bolts_in_structure = []  # 構造体が保持するボルト群(今回はボルトも部材の1つとしてカウントする )
 
+        # About Boundary
+        self.boundary_pts = []
+
         # About Nodal Load
         self.free_end_coordinates = []  # 荷重をかける座標点群
         self.support_pt_coordinates = []  # サブ構造の支点座標群
         self.mid_pt_coordinates = []  # 主構造のedgeの中心点座標群
+        self.mid_pt_coordinates_on_split_edges = []  # 主構造のedgeを分割し、連結したsplit edges lineの中心点座標群
 
         # About section list
         self.edge_section_list = []  # 各edgeのsecのindex番号を格納
@@ -116,15 +120,19 @@ class Playground:
         rs.AddLayer("structure_model", [0, 0, 0], False, False, None)
         rs.AddLayer("node", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("edge", [0, 0, 0], True, False, "structure_model")
+        rs.AddLayer("split_edge", [0, 0, 0], True, False, "structure_model")
+        rs.AddLayer("split_master_edge", [0, 0, 0], True, False, "structure_model")
         rs.AddLayer("bolt", [0, 0, 0], True, False, "structure_model")
+
         rs.AddLayer("main", [0, 0, 0], True, False, "edge")
         rs.AddLayer("sub", [0, 0, 0], True, False, "edge")
+        rs.AddLayer("split_main", [0, 0, 0], True, False, "edge")
 
-        # virtual graph layer
-        # rs.AddLayer("virtual_graph", [0, 0, 0], False, False, None)
-        # rs.AddLayer("v-node", [0, 0, 0], True, False, "virtual_graph")
-        # rs.AddLayer("v-edge", [0, 0, 0], True, False, "virtual_graph")
-        # rs.AddLayer("v-cycle", [0, 0, 0], True, False, "virtual_graph")
+        rs.AddLayer("main_split", [0, 0, 0], True, False, "split_edge")
+        rs.AddLayer("sub_split", [0, 0, 0], True, False, "split_edge")
+
+        rs.AddLayer("master_main_split", [0, 0, 0], True, False, "split_master_edge")
+        rs.AddLayer("master_sub_split", [0, 0, 0], True, False, "split_master_edge")
 
     def get_target_line(self):
         self.adding_target_line = TargetLine.get_target_line()
@@ -483,14 +491,12 @@ class Playground:
             self.nodes_in_structure.extend(joint_pts_nodes)
             self.structure.set_joint_pt_nodes(joint_pts_nodes)
 
-        """Get edge in structure"""  # ここに処理時間かかる
+        """Get edge in structure"""
         bolts = Graph.detect_edges_of_structure(num_joint_pts, node1, node2, self.edges_in_structure,
                                                 joint_pts_nodes,
                                                 self.adding_timber)
 
         """Generate Bolt instance"""
-        rs.EnableRedraw(False)
-
         for ends_bolt in bolts:
             id = "bolt-" + str(len(self.bolts_in_structure))
 
@@ -543,35 +549,62 @@ class Playground:
 
         print("")
 
+    def get_nodal_load_info(self, split_num):
+        # main sub structureを設定
+        self.main_edges_in_structure = self.structure.main_edges
+        self.sub_edges_in_structure = self.structure.sub_edges
+
+        # About Nodal Loadを初期化
+        self.mid_pt_coordinates = []  # 主構造のedgeの中心点座標群
+        self.mid_pt_coordinates_on_split_edges = []  # 主構造のedgeを分割し、連結したsplit edges lineの中心点座標群
+        self.free_end_coordinates = []  # 荷重をかける座標点群
+        self.support_pt_coordinates = []  # サブ構造の支点座標群
+
+        # main edgeの中央荷重点を取得
+        for main_edge in self.main_edges_in_structure:
+            # master edgeを2分割にし、その分割点(中央点)を取得する
+            main_edge.divide_edge_two_edge(split_num)
+
+            self.mid_pt_coordinates.append(main_edge.mid_pt)
+            self.mid_pt_coordinates_on_split_edges.append(main_edge.mid_pt_on_split_edges_line)
+
+            # main master edgeを2分割し、分割された2つのedge lineをlayerに割り当てる
+            # master_split_layer = rs.AddLayer(str(main_edge.id), [0, 0, 0], True, False, "split_main")
+            #
+            # for i, divided_edge_guid in enumerate(main_edge.divided_two_edges_guid):
+            #     layer_name = "s" + "-" + str(main_edge.id) + "-" + str(i)
+            #     layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_split_layer)
+            #
+            #     rs.ObjectLayer(divided_edge_guid, layer)  # set object layer
+            #     rs.ObjectColor(divided_edge_guid, [0, 0, 255])  # Blue
+
+            # main edgeが境界条件の1つになっている場合
+            boundary_pt = main_edge.get_boundary_pt()
+            if boundary_pt:
+                self.boundary_pts.append(boundary_pt)
+
+        # sub edgeの自由端荷重点を取得
+        for sub_edges in self.sub_edges_in_structure:
+            for sub_edge in sub_edges:
+                nodal_pt, support_pt = sub_edge.get_free_end_coordinate()
+                if nodal_pt:
+                    self.free_end_coordinates.append(nodal_pt)
+                if support_pt:
+                    self.support_pt_coordinates.append(support_pt)
+
+                # sub edgeが境界条件の1つになっている場合
+                boundary_pt = sub_edge.get_boundary_pt()
+                if boundary_pt:
+                    self.boundary_pts.append(boundary_pt)
+
     def set_user_text(self):
         # timber
         for timber in self.timbers_in_structure:
             timber.set_user_text()
 
-        # split timber edge
-        for edge in self.edges_in_structure:
-            # edge.set_user_text()  # 諸条件を設定する->これはCSVへの書き込みの際に行う
-
-            # 荷重をかける座標値を取得する→自由端
-            nodal_pt, support_pt = edge.get_free_end_coordinate()
-            if nodal_pt:
-                self.free_end_coordinates.append(nodal_pt)
-            if support_pt:
-                self.support_pt_coordinates.append(support_pt)
-
         # bolt edge
         for bolt in self.bolts_in_structure:
             bolt.set_user_text()  # ばねモデルの剛性を設定
-
-        # 主構造のedgeを2つのedgeに分割する->中央荷重をかけるため
-        self.structure.split_main_edge()
-
-        # main sub structure
-        self.main_edges_in_structure = self.structure.main_edges
-        self.sub_edges_in_structure = self.structure.sub_edges
-
-        for main_edge in self.main_edges_in_structure:
-            self.mid_pt_coordinates.append(main_edge.divided_pt)
 
     def restore_playground_instance(self):
         # About Timber
@@ -587,15 +620,25 @@ class Playground:
             edge.generate_edge_line("edge")  # draw
             edge.set_user_text()
 
-        self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
+            # About split edges line on timber center line
+            if edge.split_edges_guid:
+                edge.split_edges_guid = []
 
-        self.structure.split_main_edge()  # split main edges
+            # About split edges line on master edge
+            if edge.split_edges_guid_master_edge:
+                edge.split_edges_guid_master_edge = []
+
+            # About divided edges of main master edge
+            if edge.divided_two_edges_guid:
+                edge.divided_two_edges_guid = []
+
+        self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
 
         for bolt in self.bolts_in_structure:
             bolt.draw_line_guid("bolt")
             bolt.set_user_text()  # ばねモデルの剛性を設定
 
-    def create_section_list(self):
+    def create_section_csv_list(self):
 
         self.edge_section_list = []  # init
 
@@ -607,21 +650,38 @@ class Playground:
 
             # データの書き込み
             for edge in self.edges_in_structure:
-                sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
+                # master edge
+                master_sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
 
-                # edgeにsection idを設定
-                edge.section_id = sec_id  # set section id
-                self.edge_section_list.append(sec_id)
+                # master edgeにsection idを設定
+                edge.section_id = master_sec_id  # set section id
+                self.edge_section_list.append(master_sec_id)
 
-                # 属性ユーザーテキストに設定
+                # master edgeの属性ユーザーテキストを設定
                 edge.set_user_text()  # joint, secを設定
 
-                # 断面直径を計算する
-                edge.calc_diameter_of_section()
+                # 断面直径を計算する(master edgeは平均値を直径として割り当てる)
+                edge.calc_average_diameter_of_section()
 
                 # 断面情報をcsvに書き込む
-                diameter = edge.diameter_of_section  # 断面直径
+                diameter = edge.diameter_of_section  # 断面直径(平均値)
                 writer.writerow(
                     {"No.": edge.section_id, "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})
 
+                # split edge (child edge)
+                for index, split_edge_guid in enumerate(edge.split_edges_guid):
+                    sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
+                    self.edge_section_list.append(master_sec_id)
 
+                    # split edge guid(timber center line)の属性ユーザーテキストを設定
+                    rs.SetUserText(split_edge_guid, "joint", "3")  # joint
+                    rs.SetUserText(split_edge_guid, "sec", str(sec_id))  # section id
+
+                    # split edge guid(master edge)の属性ユーザーテキストを設定
+                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "joint", "3")  # joint
+                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "sec", str(sec_id))  # section id
+
+                    # 断面情報をcsvに書き込む
+                    diameter = edge.calc_diameter_of_section(index)
+                    writer.writerow(
+                        {"No.": str(sec_id), "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})

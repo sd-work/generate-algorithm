@@ -19,13 +19,26 @@ class Edge:
             self.end_node = node1
             self.id = str(self.start_node.id) + "-" + str(self.end_node.id)
 
-        # About divided two edges
+        # About divided two edges -> main edge
         self.divided_two_edges = None
-        self.divided_pt = None
+        self.divided_two_edges_guid = []
+        self.mid_pt = None
+
+        # About split edge line of master edge
+        self.segmented_pts = []  # 分割点
+        self.segmented_pts_on_master_edge = []  # 分割点
+        self.section_crv_list_on_segmented_pts = []  # 分割点における部材の断面曲線(Curve)
+        self.mid_pt_on_split_edges_line = None
+
+        self.split_edges = []
+        self.split_edges_guid = []
+
+        self.split_edges_master_edge = []
+        self.split_edges_guid_master_edge = []
 
         # About section
         self.section_id = None  # user text
-        self.diameter_of_section = None  # 断面曲線の直径(mで表記)
+        self.diameter_of_section = None  # 断面曲線の直径(m系で表記)
 
         # About layer
         self.layer = None
@@ -44,30 +57,36 @@ class Edge:
         self.real_edge = None
         self.is_on_virtual_cycle = False  # EdgeがVirtual cycleを構成するエッジ上にのっているかどうかの判定フラグ
 
+    # edge line guidをDoc空間に描画する
     def generate_edge_line(self, layer_name):
-        # add edge line
-        if layer_name == "r-edge":
-            self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
-        elif layer_name == "v-edge":
-            self.layer = rs.AddLayer(str(self.id), [0, 0, 255], True, False, layer_name)
-        else:
-            pass
-            # self.layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, layer_name)
-
         self.edge_line_guid = scriptcontext.doc.Objects.AddCurve(self.edge_line)
-        # rs.ObjectLayer(self.edge_line_guid, self.layer)
 
+    # edge line guidをDoc空間から削除する
     def delete_guid(self):
         rs.DeleteObject(self.edge_line_guid)
-        # rs.DeleteLayer(self.layer)
+
+        for split_edge in self.split_edges_guid:
+            rs.DeleteObject(split_edge)
+
+        for split_edge in self.split_edges_guid_master_edge:
+            rs.DeleteObject(split_edge)
+
+        for edge in self.divided_two_edges_guid:
+            if edge:
+                rs.DeleteObject(edge)
 
         self.edge_line_guid = None
+        self.split_edges_guid = []
+        self.split_edges_guid_master_edge = []
+        self.segmented_pts = []
+        self.section_crv_list_on_segmented_pts = []
+        self.divided_two_edges = []
         self.layer = None
 
-    def calc_diameter_of_section(self):
-        # edgeが保持するsplit timberの中心線を分割し、その点座標を取得
-        split_num = 10
-
+    # master edge lineをn分割し、それらをchild edge lineとして情報を保持する
+    def split_master_edge_to_segmented_edges(self, split_num=10):
+        """master edgeが保持するsplit timberの中心線を分割し、その点座標を取得"""
+        # 中心線のDomainを取得し、unit domain rangeを取得
         domain = self.split_timber.center_line.Domain
         range_domain = domain[1] - domain[0]
         unit_range_domain = range_domain / split_num
@@ -83,16 +102,70 @@ class Edge:
         origin_vec.Unitize()  # 正規化
         origin_vec = Vector3d.Multiply(origin_vec, 1000)  # 一般化
 
-        # 中心線の分割点だけ処理を行い、断面情報を取得する
-        section_list = []
-        for i in range(split_num):
-            test_pt = self.split_timber.center_line.PointAt((unit_range_domain * i) + domain[0])
-            section_curve = self.split_timber.get_section_of_timber(test_pt, origin_vec)  # 任意の点での断面情報を取得する
-            section_list.append(section_curve)
+        # 中心線を分割数の数だけ処理を行い、分割点、断面曲線を取得する
+        for i in range(split_num + 1):
+            segmented_pt = self.split_timber.center_line.PointAt((unit_range_domain * i) + domain[0])
+            section_curve = self.split_timber.get_section_of_timber(segmented_pt, origin_vec)  # 分割点での断面曲線を取得
 
+            # 各情報を保持
+            self.segmented_pts.append(segmented_pt)
+            self.section_crv_list_on_segmented_pts.append(section_curve)
+
+        # split edge guidを生成
+        for i in range(len(self.segmented_pts) - 1):
+            line = Line(self.segmented_pts[i], self.segmented_pts[i + 1])
+            self.split_edges.append(line)
+
+            line_guid = scriptcontext.doc.Objects.AddLine(line)
+            self.split_edges_guid.append(line_guid)
+
+        """master edge lineを分割し、その点座標を取得"""
+        domain = self.edge_line.Domain
+        unit_range_domain = (domain[1] - domain[0]) / split_num
+
+        # master edgeを分割数の数だけ分割し、分割点・segmented edgeを取得する
+        for i in range(split_num + 1):
+            segmented_pt = self.edge_line.PointAt((unit_range_domain * i) + domain[0])
+
+            # 情報を保持
+            self.segmented_pts_on_master_edge.append(segmented_pt)
+
+        # Sort
+        from_pt = self.segmented_pts[0]
+        to_pt1 = self.segmented_pts_on_master_edge[0]
+        to_pt2 = self.segmented_pts_on_master_edge[-1]
+
+        dis1 = Point3d.DistanceTo(from_pt, to_pt1)
+        dis2 = Point3d.DistanceTo(from_pt, to_pt2)
+
+        if dis1 < dis2:
+            pass
+        else:
+            self.segmented_pts_on_master_edge.reverse()
+
+        # split edge on master edgeを生成
+        for i in range(len(self.segmented_pts_on_master_edge) - 1):
+            line = Line(self.segmented_pts_on_master_edge[i], self.segmented_pts_on_master_edge[i + 1])
+            self.split_edges_master_edge.append(line)
+
+            line_guid = scriptcontext.doc.Objects.AddLine(line)
+            self.split_edges_guid_master_edge.append(line_guid)
+
+    def calc_diameter_of_section(self, index):
+
+        # Todo 円周長さから求めるのではなく、断面曲線から直接長さを取得する
+        section_crv = self.section_crv_list_on_segmented_pts[index]
+        crv_length = section_crv.GetLength()
+        diameter = crv_length / math.pi  # 直径(mm系)
+        diameter = diameter * (10 ** -3)  # m(メートル)に変換する
+        diameter = round(diameter, 3)  # 小数点以下3桁(小数点第四位を四捨五入)
+
+        return diameter
+
+    def calc_average_diameter_of_section(self):
         diameter_list = []
-        for crv in section_list:
-            # Todo ここの断面直径を取得する方法は変更する
+
+        for crv in self.section_crv_list_on_segmented_pts:
             # Todo 円周長さから求めるのではなく、断面曲線から直接長さを取得する
             crv_length = crv.GetLength()
             diameter = crv_length / math.pi
@@ -100,7 +173,7 @@ class Edge:
 
         # 直径情報を保存する
         self.diameter_of_section = int(sum(diameter_list) / len(diameter_list))
-        self.diameter_of_section = self.diameter_of_section * (10 ** -3)  # mに変換する
+        self.diameter_of_section = self.diameter_of_section * (10 ** -3)  # m(メートル)に変換する
         self.diameter_of_section = round(self.diameter_of_section, 3)  # 小数点以下3桁(小数点第四位を四捨五入)
 
     @staticmethod
@@ -181,30 +254,45 @@ class Edge:
 
         return free_end_coordinate, support_pt_coordinate
 
-    def divide_edge_two_edge(self):
-        # split two edge in mid pt
+    def get_boundary_pt(self):
+        boundary_pt = None
+
+        if self.start_node.structural_type == 1:
+            boundary_pt = self.start_node.point
+
+        elif self.end_node.structural_type == 1:
+            boundary_pt = self.end_node.point
+
+        return boundary_pt
+
+    def divide_edge_two_edge(self, split_num):
+        """Master Line Frame"""
+        # get mid point of master edge
         domain = self.edge_line.Domain
-        t = (domain[1] - domain[0]) / 2
-        self.divided_two_edges = self.edge_line.Split(t)
+        unit_range_domain = (domain[1] - domain[0]) / split_num
+        index = int(round(split_num / 2))
+        self.mid_pt = self.edge_line.PointAt(unit_range_domain * index)
 
-        # mid pt coordinate
-        self.divided_pt = self.edge_line.PointAt(t)
+        # split master edge to 2 edge on mid pt
+        self.divided_two_edges = self.edge_line.Split(unit_range_domain * index)
 
-        return self.divided_two_edges
+        for divided_edge in self.divided_two_edges:
+            edge_guid = scriptcontext.doc.Objects.AddCurve(divided_edge)
+            self.divided_two_edges_guid.append(edge_guid)
 
+        # main master edgeを2分割し、分割された2つのedge lineをlayerに割り当てる
+        master_split_layer = rs.AddLayer(str(self.id), [0, 0, 0], True, False, "split_main")
 
+        for i, divided_edge_guid in enumerate(self.divided_two_edges_guid):
+            layer_name = "s" + "-" + str(self.id) + "-" + str(i)
+            layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_split_layer)
 
+            rs.ObjectLayer(divided_edge_guid, layer)  # set object layer
+            rs.ObjectColor(divided_edge_guid, [0, 0, 255])  # Blue
 
-
-
-
-
-
-
-
-
-
-
-
+        """Segmented Polyline Frame"""
+        # get mid point of split edges line
+        index = int(round(split_num / 2))
+        self.mid_pt_on_split_edges_line = self.segmented_pts[index]  # 分割数を10として設定しているから5
 
 
