@@ -62,7 +62,7 @@ class Timber:
         self.is_generated_from_GL = False  # TimberがGLから生成されているかを判定するフラグ
         self.rigid_joints = []  # Timberが保持する仮想剛接合点(三角形=virtual node)情報
         self.connected_timbers = []  # Timberが接続している木材情報
-        self.status = -1  # -1/ init 0/red 1/yellow 2/blue 4/orange
+        self.status = -1  # -1:init 0:red 1:yellow 2:blue 4:orange
 
         # temp parameter
         self.section_curves_info = []
@@ -969,3 +969,22 @@ class Timber:
 
     def set_user_text(self):
         rs.SetUserText(self.center_line_guid, "joint", "3")  # joint
+
+        for split_timber in self.split_timbers:
+            rs.SetUserText(split_timber.surface_guid, "id", str(split_timber.id))
+            rs.SetUserText(split_timber.surface_guid, "color", str(split_timber.status))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

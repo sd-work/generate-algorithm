@@ -360,8 +360,9 @@ class Optimization:
             return -1, radian
 
     @staticmethod
-    def get_joint_pts_info(adding_timbers, timber_list_in_playground):
+    def get_joint_pts_info(adding_timbers, timber_list_in_playground, connected_timber_ids=None):
         """
+        :param connected_timber_ids:
         :param adding_timbers: 追加する木材群
         :param timber_list_in_playground: 遊び場に既に生成されている木材群
         :return: 各接合点における情報(２次元配列)
@@ -370,21 +371,33 @@ class Optimization:
 
         # Parameter
         joint_pts_info = []
+        generated_timbers = []
 
-        # 既に生成されている部材に接合するかどうかを決定する
-        flag = rs.GetString("既に生成されている部材に接合しますか？ yes(y) or no(n)")
-
-        if flag == "yes" or flag == "y":
-            generated_timbers = []
-            get_timber_ids = rs.GetString("既に生成されている部材のidを入力してください")
-            get_timber_ids = get_timber_ids.split(',')
-
-            for get_timber_id in get_timber_ids:
+        if connected_timber_ids:
+            for connected_timber_id in connected_timber_ids:
                 for timber in timber_list_in_playground:
-                    if timber.id == get_timber_id:
+                    if timber.id == connected_timber_id:
                         generated_timbers.append(timber)
+
         else:
-            generated_timbers = []
+
+            # 既に生成されている部材に接合するかどうかを決定する
+            flag = rs.GetString("既に生成されている部材に接合しますか？ yes(y) or no(n)")
+
+            rs.EnableRedraw(True)
+
+            if flag == "yes" or flag == "y":
+                get_timber_ids = rs.GetString("既に生成されている部材のidを入力してください")
+                get_timber_ids = get_timber_ids.split(',')
+
+                for get_timber_id in get_timber_ids:
+                    for timber in timber_list_in_playground:
+                        if timber.id == get_timber_id:
+                            generated_timbers.append(timber)
+            else:
+                generated_timbers = []
+
+            rs.EnableRedraw(False)
 
         # 各木材の生成状況を読み、生成順番を決定する
         other_timbers = list(adding_timbers)  # 部材群

@@ -12,8 +12,14 @@ import sys
 import codecs
 import time
 import csv
+import target_line
+reload(target_line)
+
+import timber
+reload(timber)
+
 from timber import *
-from target_line import *
+from target_line import TargetLine
 from optiimization import *
 from bolt import Bolt
 
@@ -62,20 +68,7 @@ class Playground:
         # About section list
         self.edge_section_list = []  # 各edgeのsecのindex番号を格納
 
-        # About Real graph
-        # self.real_graph = Graph("real", [], [])
-        # self.nodes_in_structure = []  # 構造体が保持するノード群
-        # self.edges_in_structure = []  # 構造体が保持するエッジ群
-        # self.cycle_in_playground = []  # 構造体が保持するサイクル群
-
-        # About Virtual graph
-        # self.virtual_graph = Graph("virtual", [], [])
-        # self.nodes_in_virtual = []  # virtual graphに存在するノード群
-        # self.edges_in_virtual = []  # virtual graphに存在するエッジ群
-        # self.cycle_in_virtual = []  # virtual graphに存在するサイクル群
-        # self.triangles_on_gl = []  # Virtual graphに存在する三角形群
-
-    # 部材データを生成する TODO ここはスキャンした3Dデータに切り替える
+    # 00. 部材データを生成する Todo ここはスキャンした3Dデータに切り替える
     def generate_timber_info(self, num_timber):
         for id in range(num_timber):
             timber = Timber(id)
@@ -85,8 +78,9 @@ class Playground:
             # 木材の情報をcsvファイルとして書き出す
             timber.export_csv_file("timber_" + str(id + 1))
 
+    # 00. 生成した部材データをCSVファイルとして出力する
     def export_csv_file(self):
-        path = r"G:\マイドライブ\2020\04_Master\2006_Generation-algorithm\RhinoPython\csv\timber_info.csv"
+        path = r"G:\マイドライブ\2021\04_Master\2104_GenerationAlgorithm\RhinoPython\csv\timber_info.csv"
 
         with open(path, "w") as csv_file:
             writer = csv.writer(csv_file)
@@ -98,19 +92,7 @@ class Playground:
 
         self.timber_list_in_database = []  # reset
 
-    def open_csv_file(self):
-        path = r"G:\マイドライブ\2020\04_Master\2006_Generation-algorithm\RhinoPython\csv\timber_info.csv"
-
-        # 遊び場を構成している部材群を初期化する
-        # self.timbers_in_structure = []
-
-        with codecs.open(path, "r", "utf-8") as csv_file:
-            reader = csv.reader(csv_file)
-            for info in reader:
-                if not info:
-                    continue
-                self.timber_list_in_database.append(Timber(info[0], info[1], info[2], "playground"))
-
+    # 01. Layerを生成する
     @staticmethod
     def create_playground_layer():
         # playground layer
@@ -134,20 +116,86 @@ class Playground:
         rs.AddLayer("master_main_split", [0, 0, 0], True, False, "split_master_edge")
         rs.AddLayer("master_sub_split", [0, 0, 0], True, False, "split_master_edge")
 
+    # 01. Instance情報から、構造体を復元する
+    def restore_playground_instance(self):
+        # About Timber
+        for timber in self.timbers_in_structure:
+            timber.restore_timber_instance()  # draw
+            timber.set_user_text()  # set user text
+
+        # About structure model
+        for node in self.nodes_in_structure:
+            node.generate_node_point("node")  # draw
+
+        for edge in self.edges_in_structure:
+            edge.generate_edge_line("edge")  # draw
+            edge.set_user_text()
+
+            # About split edges line on timber center line
+            if edge.split_edges_guid:
+                edge.split_edges_guid = []
+
+            # About split edges line on master edge
+            if edge.split_edges_guid_master_edge:
+                edge.split_edges_guid_master_edge = []
+
+            # About divided edges of main master edge
+            if edge.divided_two_edges_guid:
+                edge.divided_two_edges_guid = []
+
+        self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
+
+        for bolt in self.bolts_in_structure:
+            bolt.draw_line_guid("bolt")
+            bolt.set_user_text()  # ばねモデルの剛性を設定
+
+    # 02. 部材データ(CSV)を読み込む
+    def open_csv_file(self):
+        path = r"G:\マイドライブ\2021\04_Master\2104_GenerationAlgorithm\RhinoPython\csv\timber_info.csv"
+
+        # 遊び場を構成している部材群を初期化する
+        # self.timbers_in_structure = []
+
+        with codecs.open(path, "r", "utf-8") as csv_file:
+            reader = csv.reader(csv_file)
+            for info in reader:
+                if not info:
+                    continue
+                self.timber_list_in_database.append(Timber(info[0], info[1], info[2], "playground"))
+
+    # 03. Target Lineを取得する(Rhino Pythonから取得)
     def get_target_line(self):
         self.adding_target_line = TargetLine.get_target_line()
 
-    def select_adding_timber(self):
+    # 03. Target Lineを取得する(ARから取得)
+    def get_target_line_from_pts(self, target_line_gh):
+        target_line_guid = rs.AddLine(target_line_gh[0], target_line_gh[1])
+        self.adding_target_line = TargetLine(target_line_guid)  # TargetLine instance
+
+        # if target_line_gh:
+        #     print(type(target_line_gh))
+        #     rs.DeleteObject(target_line_gh)
+
+    # 04. 取得したTarget Lineから、部材を選定する Todo いずれはデータベースから検索する
+    def select_adding_timber(self, target_line_guid=None):
 
         # 取得したターゲット曲線情報から、木材を追加するための新たなターゲット曲線情報を取得
         # target_length, self.adding_target_line = Optimization.edit_adding_timber_range(target_line, num_of_joint_pt)
 
-        # 既に生成されている木材のIdリストを作成する
+        # 既に生成されている木材のidリストを作成する
         used_timbers_id = [timber.id for timber in self.timbers_in_structure]
 
         # 木材の参照長さに最も近似した長さの木材を検索し、取得する
-        select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database, self.adding_target_line,
-                                                                 used_timbers_id)
+        if target_line_guid:
+            self.adding_target_line = TargetLine(target_line_guid)
+
+            select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database,
+                                                                     self.adding_target_line,
+                                                                     used_timbers_id)
+        else:
+            select_timber = Optimization.get_best_timber_in_database(self.timber_list_in_database,
+                                                                     self.adding_target_line,
+                                                                     used_timbers_id)
 
         self.adding_timber = select_timber  # adding timberの設定
         self.adding_timber.target_line = self.adding_target_line  # ターゲット曲線を設定
@@ -157,6 +205,7 @@ class Playground:
         #  ターゲット曲線から木材の生成パターンを判定する
         self.adding_timber.judge_timber_pattern(self.adding_target_line, self.timbers_in_structure)
 
+    # 05. 移動や回転を行い、木材を所定の位置に配置する
     def transform_timber(self):
         # translate
         origin_p = self.adding_timber.center_line.PointAtStart  # timberの端点
@@ -171,11 +220,13 @@ class Playground:
         rotation_center = self.adding_timber.center_line.PointAtStart
         self.adding_timber.rotate_timber(angle, axis, rotation_center)
 
-    def minimized_joint_area(self):
+    # 06. 木材の表面の最適化を行う
+    def minimized_joint_area(self, connected_timber_ids=None):
         global num_joint_pts, joint_pts_info
 
         # ターゲット曲線の情報から接合点、ベクトルを計算し、取得する
-        joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timbers_in_structure)
+        joint_pts_info = Optimization.get_joint_pts_info(self.adding_timbers, self.timbers_in_structure,
+                                                         connected_timber_ids)
 
         # number of joint points is 1
         if len(joint_pts_info) == 1:
@@ -215,230 +266,7 @@ class Playground:
             # print("There are not joint points.")
             return True
 
-    def determine_status_of_structure(self):
-        print("num_joint_pts: {0}".format(num_joint_pts))
-
-        num_nodes_in_structure = len(self.real_graph.nodes)
-
-        for adding_timber in self.adding_timbers:
-
-            """Get Node in Real graph"""
-            node1 = Node(num_nodes_in_structure, adding_timber.center_line.First)
-            node2 = Node(num_nodes_in_structure + 1, adding_timber.center_line.Last)
-
-            # Regard GL point node as Joint point node
-            if -50 <= node1.z <= 50:
-                adding_timber.joint_pts_nodes.append(node1)
-
-            if -50 <= node2.z <= 50:
-                adding_timber.joint_pts_nodes.append(node2)
-
-            # Draw node in doc
-            node1.generate_node_point("r-node")
-            node2.generate_node_point("r-node")
-
-            # Maintain node information
-            self.nodes_in_structure += node1, node2
-
-            """Get Edge in Real graph """
-            # If there are not joint point
-            if num_joint_pts == 0:
-                joint_pts_nodes = None
-
-            # If there are some joint points
-            else:
-                # Get joint point nodes
-                joint_pts_nodes = Graph.create_node_from_joint_pts(num_nodes_in_structure, joint_pts_info)
-
-                # Maintain node information
-                self.nodes_in_structure.extend(joint_pts_nodes)
-
-            # Detecting edges in real graph
-            self.real_graph.detect_edge_of_real_graph(num_joint_pts, node1, node2, self.edges_in_structure,
-                                                      joint_pts_nodes, adding_timber)
-
-        # Constructing Real Graphs
-        self.real_graph.set_graph(self.nodes_in_structure, self.edges_in_structure)
-        self.real_graph.create_graph()
-
-        # Detecting cycles in real graph by using search method
-        cycles = Search.detect_cycles_in_graph(self.real_graph)
-        print("real cycles: {0}".format(cycles))
-
-        # If some cycles are detected
-        if cycles:
-            # Drawing cycle mesh or polyline in doc
-            new_cycles = self.real_graph.generate_cycle(cycles, self.nodes_in_structure, "r-cycle")
-
-            # If a new real cycle is detected
-            if new_cycles:
-
-                # Maintain cycle information
-                for real_cycle in new_cycles:
-                    self.cycle_in_playground.append(real_cycle)
-
-                    """Get virtual Node based on a new real cycle"""
-                    virtual_node = Node("v" + str(len(self.cycle_in_playground)), real_cycle.centroid,
-                                        real_cycle.composition_nodes,
-                                        real_cycle.is_on_GL)
-
-                    # Draw node in doc
-                    virtual_node.generate_node_point("v-node")
-
-                    # Maintain node information
-                    self.nodes_in_virtual.append(virtual_node)
-
-                    """Get virtual Edge"""
-                    # Search edges of virtual graph
-                    adding_virtual_nodes = self.virtual_graph.detect_edge_of_virtual_graph(virtual_node,
-                                                                                           self.edges_in_structure,
-                                                                                           self.edges_in_virtual)
-
-                    # Maintain node information
-                    for adding_virtual_node in adding_virtual_nodes:
-                        if adding_virtual_node in self.nodes_in_virtual:
-                            continue
-                        else:
-                            self.nodes_in_virtual.append(adding_virtual_node)
-
-                    """Judge whether nodes in virtual have two GL node"""
-                    gl_nodes = []
-
-                    # ここで取得したノードがドロネー分割時の母点に置き換わる
-                    for v_node in self.nodes_in_virtual:
-                        if v_node.is_on_GL:
-                            gl_nodes.append(v_node)
-
-                    if len(gl_nodes) < 2:
-                        pass
-
-                    elif len(gl_nodes) == 2:
-                        # Record the nodes to which each node is connected
-                        if not (gl_nodes[1] in gl_nodes[0].connected_nodes):
-                            gl_nodes[0].connected_nodes.append(gl_nodes[1])  # about Node
-
-                            if not (gl_nodes[0] in gl_nodes[1].connected_nodes):
-                                gl_nodes[1].connected_nodes.append(gl_nodes[0])  # about Node
-
-                                # Edge Instance
-                                id = str(gl_nodes[0].id) + "-" + str(gl_nodes[1].id)
-                                edge = Edge(id, gl_nodes[0], gl_nodes[1], None)
-
-                                # Maintain node information
-                                if edge in self.edges_in_virtual:
-                                    pass
-                                else:
-                                    self.edges_in_virtual.append(edge)
-
-                    else:
-                        # ドロネー分割以外のアルゴリズム
-                        new_edges, new_triangles = get_adjacent_relationships(virtual_node, gl_nodes,
-                                                                              self.triangles_on_gl)
-
-                        # ドロネー分割
-                        # new_edges = delaunay_triangulation(gl_nodes)
-
-                        # Maintain node information
-                        for edge in new_edges:
-                            if edge in self.edges_in_virtual:
-                                pass
-                            else:
-                                self.edges_in_virtual.append(edge)
-
-                        for triangle in new_triangles:
-                            if triangle in self.triangles_on_gl:
-                                pass
-                            else:
-                                self.triangles_on_gl.append(triangle)
-
-                                # Draw triangle line in doc
-                                triangle.draw_divide_triangle()
-
-                    # Constructing Virtual Graphs
-                    self.virtual_graph.set_graph(self.nodes_in_virtual, self.edges_in_virtual)
-                    self.virtual_graph.create_graph()
-
-                    # Append Virtual Node information
-                    # TODO 2. ループができるまで追加してきた材を履歴にとる場合は大丈夫だが、複数の子どもが同時に生成する場合や
-                    # TODO 2. ループを完成させないで、違う場所から新たに生成を始めるなどの時は複数の履歴を持っておく必要がある
-                    # 1. ノードを保持する履歴リストが空である場合
-                    # TODO 1. 黄色エッジからの接合ではなく、青色エッジ上に新たにReal Cycleが出来た場合、
-                    # TODO 1. 現状だと、サイクルの判定ができていないアルゴリズムになっているので変更する必要あり
-                    if not self.virtual_graph.virtual_node_history:
-                        if virtual_node.having_edges_to_virtual_node:
-                            for edge in virtual_node.having_edges_to_virtual_node:
-                                some_history_list = []
-                                history_list = []
-
-                                if edge.start_node is virtual_node:
-                                    previous_virtual_node = edge.end_node
-                                else:
-                                    previous_virtual_node = edge.start_node
-
-                                history_list += previous_virtual_node, virtual_node
-                                some_history_list.append(history_list)
-
-                                # 各履歴を保持しておくリストに追加する
-                                self.virtual_graph.virtual_node_history.append(some_history_list)
-                        else:
-                            some_history_list = []
-                            history_list = [virtual_node]
-
-                            some_history_list.append(history_list)
-
-                            # 各履歴を保持しておくリストに追加する
-                            self.virtual_graph.virtual_node_history.append(some_history_list)
-
-                    # 2. 何らかのノード情報を履歴リストが既に持っている場合
-                    else:
-                        for node_history_list in self.virtual_graph.virtual_node_history:
-                            for node_history in node_history_list:
-                                node_history.append(virtual_node)
-
-                    # debug
-                    for node_history_list in self.virtual_graph.virtual_node_history:
-                        for node_history in node_history_list:
-                            print("---")
-                            for node in node_history:
-                                print("Node history: {0}".format(node.id))
-
-                    # Detecting cycles in virtual graph by using search method
-                    if self.virtual_graph.virtual_node_history:
-                        find_cycles = Search.search_virtual_cycle(self.virtual_graph.virtual_node_history)
-
-                        if find_cycles:
-                            print("---Find new cycle---")
-                            print(find_cycles)
-
-                            # Drawing virtual cycle mesh in doc
-                            new_cycles, delete_cycles = self.virtual_graph.generate_cycle(find_cycles,
-                                                                                          self.nodes_in_virtual,
-                                                                                          "v-cycle")
-
-                            # 新しいvirtual cycle が検出された場合
-                            if new_cycles:
-                                # Maintain virtual cycle information
-                                for virtual_cycle in new_cycles:
-                                    self.cycle_in_virtual.append(virtual_cycle)
-
-                                # 変数をリセットする
-                                self.virtual_graph.virtual_node_history = []
-
-                            # 古いサイクルがある場合、削除する
-                            if delete_cycles:
-                                for delete_cycle in delete_cycles:
-                                    if delete_cycle in self.cycle_in_virtual:
-                                        self.cycle_in_virtual.remove(delete_cycle)
-
-                        print("virtual cycles: {0}".format(self.virtual_graph.cycles))
-
-        # 新たに生成した部材を記録しておく
-        for timber in self.adding_timbers:
-            self.timbers_in_structure.append(timber)
-
-        # 部材の色分けを行う(全体の判定 -> 部分の判定)
-        self.virtual_graph.color_code_timbers(self.timbers_in_structure)
-
+    # 07. モデル化した構造体モデルから現状の構造体の状況を計算する
     def analysis_structure(self, index):
 
         num_nodes_in_structure = len(self.nodes_in_structure)
@@ -533,6 +361,7 @@ class Playground:
         # print("calc_redundancy: {0}".format(elapsed_time4))
         # print("color_code: {0}".format(elapsed_time5))
 
+    # 08. 変数をリセットする
     def reset(self):
         # Print the information of adding timber
         # for timber in self.timbers_in_structure:
@@ -549,6 +378,61 @@ class Playground:
 
         print("")
 
+    # 09. section listを作成し、csv形式で保存する→OpenSeesで使用するため
+    def create_section_csv_list(self, section_list_path=None):
+
+        self.edge_section_list = []  # init
+
+        if section_list_path:
+            pass
+        else:
+            section_list_path = "section_list\\section_list.csv"
+
+        with open(section_list_path, "w") as f:
+            # headerの設定
+            fieldnames = ["No.", "S", "P1", "P2", "P3", "P4"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")  # 書き込みの空白を削除する
+            writer.writeheader()
+
+            # データの書き込み
+            for edge in self.edges_in_structure:
+                """master edge"""
+                master_sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
+
+                # master edgeにsection idを設定
+                edge.section_id = master_sec_id  # set section id
+                self.edge_section_list.append(master_sec_id)
+
+                # master edgeの属性ユーザーテキストを設定
+                edge.set_user_text()  # joint, secを設定
+
+                # 断面直径を計算する(master edgeは平均値を直径として割り当てる)
+                edge.calc_average_diameter_of_section()
+
+                # 断面情報をcsvに書き込む
+                diameter = edge.diameter_of_section  # 断面直径(平均値)
+                writer.writerow(
+                    {"No.": edge.section_id, "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})
+
+                """split edge (child edge)"""
+                for index, split_edge_guid in enumerate(edge.split_edges_guid):
+                    sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
+                    self.edge_section_list.append(master_sec_id)
+
+                    # split edge guid(timber center line)の属性ユーザーテキストを設定
+                    rs.SetUserText(split_edge_guid, "joint", "3")  # joint
+                    rs.SetUserText(split_edge_guid, "sec", str(sec_id))  # section id
+
+                    # split edge guid(master edge)の属性ユーザーテキストを設定
+                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "joint", "3")  # joint
+                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "sec", str(sec_id))  # section id
+
+                    # 断面情報をcsvに書き込む
+                    diameter = edge.calc_diameter_of_section(index)
+                    writer.writerow(
+                        {"No.": str(sec_id), "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})
+
+    # 10. 構造解析で使用する荷重情報を取得する→OpenSeesで使用するため
     def get_nodal_load_info(self, split_num):
         # main sub structureを設定
         self.main_edges_in_structure = self.structure.main_edges
@@ -567,16 +451,6 @@ class Playground:
 
             self.mid_pt_coordinates.append(main_edge.mid_pt)
             self.mid_pt_coordinates_on_split_edges.append(main_edge.mid_pt_on_split_edges_line)
-
-            # main master edgeを2分割し、分割された2つのedge lineをlayerに割り当てる
-            # master_split_layer = rs.AddLayer(str(main_edge.id), [0, 0, 0], True, False, "split_main")
-            #
-            # for i, divided_edge_guid in enumerate(main_edge.divided_two_edges_guid):
-            #     layer_name = "s" + "-" + str(main_edge.id) + "-" + str(i)
-            #     layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_split_layer)
-            #
-            #     rs.ObjectLayer(divided_edge_guid, layer)  # set object layer
-            #     rs.ObjectColor(divided_edge_guid, [0, 0, 255])  # Blue
 
             # main edgeが境界条件の1つになっている場合
             boundary_pt = main_edge.get_boundary_pt()
@@ -597,6 +471,7 @@ class Playground:
                 if boundary_pt:
                     self.boundary_pts.append(boundary_pt)
 
+    # 10. 属性User textを設定する→OpenSeesで使用するため
     def set_user_text(self):
         # timber
         for timber in self.timbers_in_structure:
@@ -606,82 +481,3 @@ class Playground:
         for bolt in self.bolts_in_structure:
             bolt.set_user_text()  # ばねモデルの剛性を設定
 
-    def restore_playground_instance(self):
-        # About Timber
-        for timber in self.timbers_in_structure:
-            timber.restore_timber_instance()  # draw
-            timber.set_user_text()  # set user text
-
-        # About structure model
-        for node in self.nodes_in_structure:
-            node.generate_node_point("node")  # draw
-
-        for edge in self.edges_in_structure:
-            edge.generate_edge_line("edge")  # draw
-            edge.set_user_text()
-
-            # About split edges line on timber center line
-            if edge.split_edges_guid:
-                edge.split_edges_guid = []
-
-            # About split edges line on master edge
-            if edge.split_edges_guid_master_edge:
-                edge.split_edges_guid_master_edge = []
-
-            # About divided edges of main master edge
-            if edge.divided_two_edges_guid:
-                edge.divided_two_edges_guid = []
-
-        self.structure.set_edges_to_main_sub_layer()  # layerを振り分ける
-
-        for bolt in self.bolts_in_structure:
-            bolt.draw_line_guid("bolt")
-            bolt.set_user_text()  # ばねモデルの剛性を設定
-
-    def create_section_csv_list(self):
-
-        self.edge_section_list = []  # init
-
-        with open("section_list\\section_list.csv", "w") as f:
-            # headerの設定
-            fieldnames = ["No.", "S", "P1", "P2", "P3", "P4"]
-            writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")  # 書き込みの空白を削除する
-            writer.writeheader()
-
-            # データの書き込み
-            for edge in self.edges_in_structure:
-                # master edge
-                master_sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
-
-                # master edgeにsection idを設定
-                edge.section_id = master_sec_id  # set section id
-                self.edge_section_list.append(master_sec_id)
-
-                # master edgeの属性ユーザーテキストを設定
-                edge.set_user_text()  # joint, secを設定
-
-                # 断面直径を計算する(master edgeは平均値を直径として割り当てる)
-                edge.calc_average_diameter_of_section()
-
-                # 断面情報をcsvに書き込む
-                diameter = edge.diameter_of_section  # 断面直径(平均値)
-                writer.writerow(
-                    {"No.": edge.section_id, "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})
-
-                # split edge (child edge)
-                for index, split_edge_guid in enumerate(edge.split_edges_guid):
-                    sec_id = len(self.edge_section_list)  # 0~n番と順番に書き込まないとGH側でエラーがでる
-                    self.edge_section_list.append(master_sec_id)
-
-                    # split edge guid(timber center line)の属性ユーザーテキストを設定
-                    rs.SetUserText(split_edge_guid, "joint", "3")  # joint
-                    rs.SetUserText(split_edge_guid, "sec", str(sec_id))  # section id
-
-                    # split edge guid(master edge)の属性ユーザーテキストを設定
-                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "joint", "3")  # joint
-                    rs.SetUserText(edge.split_edges_guid_master_edge[index], "sec", str(sec_id))  # section id
-
-                    # 断面情報をcsvに書き込む
-                    diameter = edge.calc_diameter_of_section(index)
-                    writer.writerow(
-                        {"No.": str(sec_id), "S": "2", "P1": str(diameter), "P2": "0", "P3": "0", "P4": "0"})

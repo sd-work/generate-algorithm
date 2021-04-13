@@ -4,16 +4,17 @@ import os
 import sys
 import time
 import pickle
+import importlib
 import rhinoscriptsyntax as rs
 import Rhino
 import scriptcontext as sc
-from playground import *
+from playground import Playground
 
 # Documentの位置を指定する
 sc.doc = Rhino.RhinoDoc.ActiveDoc
 
 # parameter
-num_processes = 2
+num_processes = 1
 split_num = 10  # 1つのedgeを何分割のsegmented edgeにするか
 
 # 前回のデータを引き継ぐかどうかを判定する
@@ -36,7 +37,7 @@ if flag == "y" or flag == "yes":
             # レイヤーを生成
             playground.create_playground_layer()
 
-            # Todo データを復元する
+            # データを復元する
             playground.restore_playground_instance()
 
             # Master timberのsurface, center line guidを非表示にする
@@ -98,6 +99,7 @@ if __name__ == "__main__":
         rs.HideObject(timber.center_line_guid)
 
     # 08. section listを作成し、csv形式で保存する→OpenSeesで使用するため
+    #     edgeの属性ユーザーテキストを設定
     playground.create_section_csv_list()
 
     # 09. 構造解析で使用する荷重情報を取得する→OpenSeesで使用するため
@@ -113,4 +115,3 @@ if __name__ == "__main__":
     if flag == "y" or flag == "yes":
         with open("binary_file\\playground.binaryfile", "wb") as web:
             pickle.dump(playground, web)
-

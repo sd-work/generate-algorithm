@@ -25,8 +25,8 @@ class Edge:
         self.mid_pt = None
 
         # About split edge line of master edge
-        self.segmented_pts = []  # 分割点
-        self.segmented_pts_on_master_edge = []  # 分割点
+        self.segmented_pts = []  # 分割点(中心線)
+        self.segmented_pts_on_master_edge = []  # 分割点(master edge)
         self.section_crv_list_on_segmented_pts = []  # 分割点における部材の断面曲線(Curve)
         self.mid_pt_on_split_edges_line = None
 
@@ -286,9 +286,11 @@ class Edge:
         for i, divided_edge_guid in enumerate(self.divided_two_edges_guid):
             layer_name = "s" + "-" + str(self.id) + "-" + str(i)
             layer = rs.AddLayer(layer_name, [0, 0, 0], True, False, master_split_layer)
-
             rs.ObjectLayer(divided_edge_guid, layer)  # set object layer
             rs.ObjectColor(divided_edge_guid, [0, 0, 255])  # Blue
+
+            # set user text
+            rs.SetUserText(divided_edge_guid, "color", "blue")  # joint
 
         """Segmented Polyline Frame"""
         # get mid point of split edges line
